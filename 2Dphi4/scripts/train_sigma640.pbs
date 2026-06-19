@@ -1,0 +1,49 @@
+#!/bin/bash -l
+#PBS -q short-g
+#PBS -l select=1
+#PBS -l walltime=08:00:00
+#PBS -W group_list=gw97
+#PBS -N dm_train_k028_sigma640
+#PBS -j oe
+#PBS -m abe
+#PBS -M yangyang-tan@g.ecc.u-tokyo.ac.jp
+
+set -e
+
+cd ${PBS_O_WORKDIR}
+source /etc/profile.d/modules.sh
+module load miniforge3
+source activate nenv2
+
+JID=${PBS_JOBID%.opbs}
+
+echo "================================================================"
+echo "Job ID    : ${PBS_JOBID}"
+echo "Node      : $(hostname)"
+echo "Start     : $(date '+%F %T')"
+echo "Workdir   : ${PBS_O_WORKDIR}"
+echo "================================================================"
+nvidia-smi -L
+echo
+
+# Background GPU monitor — line-buffered single nvidia-smi calls
+(while true; do
+    nvidia-smi --query-gpu=timestamp,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits
+    sleep 10
+done > /work/gw97/w97000/train_sigma640_gpu_${JID}.log 2>&1) &
+MON_PID=$!
+echo "GPU monitor pid=$MON_PID"
+echo
+
+python train_phi4.py \
+    --L 128 --k 0.28 --l 0.022 \
+    --sigma 640 \
+    --batch_size 2560 --device cuda:0 \
+    --network ncsnpp --gpu_data \
+    --data_path trainingdata/cfgs_wolff_fahmc_k=0.28_l=0.022_128^2.jld2 \
+    --output_suffix _sigma640_opt \
+    --epochs 40000 --num_ckpts 200
+
+kill $MON_PID 2>/dev/null || true
+echo
+echo "Finished : $(date '+%F %T')"

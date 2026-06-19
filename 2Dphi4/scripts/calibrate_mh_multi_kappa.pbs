@@ -1,0 +1,97 @@
+#!/bin/bash -l
+#PBS -q short-g
+#PBS -l select=1
+#PBS -l walltime=03:00:00
+#PBS -W group_list=gw97
+#PBS -N dm_calibrate_mh_3k
+#PBS -j oe
+#PBS -m abe
+#PBS -M yangyang-tan@g.ecc.u-tokyo.ac.jp
+
+# MALA acceptance-rate calibration for the 2D phi^4 score net at L=128,
+# kappa=0.26, 0.2705, 0.28.  Sweeps the step-size coefficient c and the
+# evaluation time t_mh, averaging acceptance rates over an early window
+# (epochs 1-49) and a late window (epochs 6000-10000).  Outputs are .pdf
+# + .npz pairs under acceptance_rate/, plus combined multi-kappa figures
+# under draft/figures/2Dphi4/.
+
+set -e
+
+cd ${PBS_O_WORKDIR}
+source /etc/profile.d/modules.sh
+module load miniforge3
+source activate nenv2
+
+JID=${PBS_JOBID%.opbs}
+
+echo "================================================================"
+echo "Job ID    : ${PBS_JOBID}"
+echo "Node      : $(hostname)"
+echo "Start     : $(date '+%F %T')"
+echo "Workdir   : ${PBS_O_WORKDIR}"
+echo "================================================================"
+nvidia-smi -L
+echo
+
+DEVICE=cuda:0
+EARLY="1-49"
+LATE="6000-10000"
+
+# (kappa, run_dir_suffix, output tag) triples.
+declare -a KAPPAS=(0.26   0.2705  0.28)
+declare -a SUFS=(  sigma300  sigma450  sigma640)
+
+OUT_DIR=acceptance_rate
+
+# ---- step size sweep (c) ----
+for i in 0 1 2; do
+    K=${KAPPAS[$i]}
+    SUF=${SUFS[$i]}
+    RUN_DIR=runs/phi4_L128_k${K}_l0.022_ncsnpp_${SUF}
+    echo "--------------------------------------------------------------"
+    echo "Step-size sweep:  kappa=${K}  run=${RUN_DIR}"
+    echo "--------------------------------------------------------------"
+    python acceptance_rate/calibrate_step_size.py \
+        --device ${DEVICE} --L 128 --k ${K} --l 0.022 \
+        --run_dir ${RUN_DIR} \
+        --early_window ${EARLY} --late_window ${LATE} \
+        --num_samples 256 --mh_steps 1 --t_mh 1e-4 \
+        --out_dir ${OUT_DIR} --out_tag ${SUF}
+done
+
+# ---- t_mh sweep ----
+for i in 0 1 2; do
+    K=${KAPPAS[$i]}
+    SUF=${SUFS[$i]}
+    RUN_DIR=runs/phi4_L128_k${K}_l0.022_ncsnpp_${SUF}
+    echo "--------------------------------------------------------------"
+    echo "t_mh sweep:  kappa=${K}  run=${RUN_DIR}"
+    echo "--------------------------------------------------------------"
+    python acceptance_rate/calibrate_t_mh.py \
+        --device ${DEVICE} --L 128 --k ${K} --l 0.022 \
+        --run_dir ${RUN_DIR} \
+        --early_window ${EARLY} --late_window ${LATE} \
+        --num_samples 256 --mh_steps 1 --c 0.2 \
+        --out_dir ${OUT_DIR} --out_tag ${SUF}
+done
+
+# ---- combined figures ----
+echo "--------------------------------------------------------------"
+echo "Combining per-kappa npz into multi-kappa figures"
+echo "--------------------------------------------------------------"
+python acceptance_rate/plot_calibrate_combined.py --kind h \
+    --inputs \
+        ${OUT_DIR}/calibrate_h_L128_k0.26_sigma300.npz \
+        ${OUT_DIR}/calibrate_h_L128_k0.2705_sigma450.npz \
+        ${OUT_DIR}/calibrate_h_L128_k0.28_sigma640.npz \
+    --out  ../draft/figures/2Dphi4/calibrate_h_L128_multi_kappa.pdf
+
+python acceptance_rate/plot_calibrate_combined.py --kind t_mh \
+    --inputs \
+        ${OUT_DIR}/calibrate_t_mh_L128_k0.26_sigma300.npz \
+        ${OUT_DIR}/calibrate_t_mh_L128_k0.2705_sigma450.npz \
+        ${OUT_DIR}/calibrate_t_mh_L128_k0.28_sigma640.npz \
+    --out  ../draft/figures/2Dphi4/calibrate_t_mh_L128_multi_kappa.pdf
+
+echo
+echo "Finished : $(date '+%F %T')"

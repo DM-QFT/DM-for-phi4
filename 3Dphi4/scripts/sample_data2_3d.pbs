@@ -1,0 +1,105 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=20
+#PBS -l walltime=00:20:00
+#PBS -W group_list=gw97
+#PBS -N dm3d_sample_data2
+#PBS -j oe
+#PBS -m abe
+#PBS -M yangyang-tan@g.ecc.u-tokyo.ac.jp
+
+# Sample 20 log-spaced checkpoints of
+#   runs/phi4_3d_L64_k0.1923_l0.9_ncsnpp_sigma2048/
+# in parallel, one ckpt per node, on 20 GB200 nodes.
+#
+# Per call:
+#   - 64 samples, EM/SDE, 2000 steps, LINEAR schedule (3D convention)
+#   - NO Z2 augmentation (saved N = 64)
+#   - Output: runs/.../data2/samples_em_steps2000_epoch=XXXX.npy
+#     (existing data/ left untouched)
+#
+# Submit:   qsub scripts/sample_data2_3d.pbs
+
+set -e
+
+cd ${PBS_O_WORKDIR:-$(pwd)}
+
+K=0.1923
+L=64
+LAMBDA=0.9
+SIGMA=2048
+RUN_SUFFIX=_sigma2048
+OUT_SUBDIR=data2
+RUN_DIR="runs/phi4_3d_L${L}_k${K}_l${LAMBDA}_ncsnpp${RUN_SUFFIX}"
+
+# 20 epoch tags geom-spaced over [1, 20000] across the 85 ckpts present.
+EPOCHS=(0001 0002 0003 0005 0008 0014 0022 0040 0066 0110 \
+        0181 0299 0545 0900 1484 2447 4035 7354 12128 20000)
+
+# ---- Pre-flight: validate all ckpts exist before launching mpirun. ----
+MISSING=()
+for ep in "${EPOCHS[@]}"; do
+    [[ -f "${RUN_DIR}/models/epoch=${ep}.ckpt" ]] || MISSING+=("$ep")
+done
+if (( ${#MISSING[@]} > 0 )); then
+    echo "ERROR: missing ckpts in ${RUN_DIR}/models/:"
+    for ep in "${MISSING[@]}"; do echo "  epoch=${ep}.ckpt"; done
+    exit 1
+fi
+
+mkdir -p "${RUN_DIR}/${OUT_SUBDIR}"
+
+cat <<EOF
+========================================
+Job ID    : ${PBS_JOBID:-<no-pbs>}
+Start     : $(date '+%F %T')
+Workdir   : $(pwd)
+Run dir   : ${RUN_DIR}
+Out subdir: ${OUT_SUBDIR}
+Nodes     : $(uniq ${PBS_NODEFILE:-/dev/null} 2>/dev/null | tr '\n' ' ')
+N_epochs  : ${#EPOCHS[@]}
+Epochs    : ${EPOCHS[@]}
+schedule  : linear   sde_steps: 2000   num_samples: 64
+========================================
+EOF
+
+if [[ -z "${PBS_NODEFILE:-}" ]]; then
+    echo "(no PBS_NODEFILE — preflight only; not launching mpirun)"
+    exit 0
+fi
+
+N_NODES=$(uniq "${PBS_NODEFILE}" | wc -l)
+N_EPOCHS=${#EPOCHS[@]}
+
+# Round-robin: rank r gets epochs r, r+N_NODES, r+2*N_NODES, ...
+declare -a CHUNKS
+for ((i=0; i<N_NODES; i++)); do CHUNKS[$i]=""; done
+for ((i=0; i<N_EPOCHS; i++)); do
+    r=$((i % N_NODES))
+    if [[ -z "${CHUNKS[$r]}" ]]; then
+        CHUNKS[$r]="${EPOCHS[$i]}"
+    else
+        CHUNKS[$r]="${CHUNKS[$r]},${EPOCHS[$i]}"
+    fi
+done
+
+echo "=== Distribution (${N_EPOCHS} epochs -> ${N_NODES} nodes) ==="
+i=0
+for n in $(uniq "${PBS_NODEFILE}"); do
+    echo "  $n (rank $i): ${CHUNKS[$i]:-<idle>}"
+    i=$((i+1))
+done
+echo
+
+# Join CHUNKS with ';' (safer than space through mpirun argv).
+OLD_IFS="$IFS"; IFS=";"
+CHUNKS_STR="${CHUNKS[*]}"
+IFS="$OLD_IFS"
+
+mpirun --map-by ppr:1:node -hostfile "${PBS_NODEFILE}" \
+    bash "${PBS_O_WORKDIR}/scripts/sample_data2_3d_worker.sh" \
+        "${CHUNKS_STR}" "${K}" "${L}" "${LAMBDA}" "${SIGMA}" \
+        "${RUN_SUFFIX}" "${OUT_SUBDIR}"
+
+echo
+echo "Finished : $(date '+%F %T')"

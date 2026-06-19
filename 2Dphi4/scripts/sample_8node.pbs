@@ -1,0 +1,35 @@
+#!/bin/bash
+#PBS -q interact-g
+#PBS -l select=8
+#PBS -l walltime=00:10:00
+#PBS -W group_list=gw97
+#PBS -N dm_sample_8n
+#PBS -j oe
+
+# Run from 2Dphi4/ dir. Submits 8 nodes (interact-g_n8 routing), each
+# samples ONE checkpoint of the sigma320 sweep run in parallel.
+# Edit EPOCHS below before submit.
+
+cd ${PBS_O_WORKDIR}
+source /etc/profile.d/modules.sh
+
+# Edit these 8 epoch tags (4-digit, must exist as runs/.../models/epoch=XXXX.ckpt)
+EPOCHS=(0001 0005 0028 0079 0242 0739 2257 6280)
+
+K=0.28
+L=128
+SIGMA=320
+RUN_SUFFIX=_sigma320_opt
+
+cat <<EOF
+========================================
+Job ID    : ${PBS_JOBID}
+Nodes     : $(uniq $PBS_NODEFILE | tr '\n' ' ')
+Epochs    : ${EPOCHS[@]}
+========================================
+EOF
+
+# One worker process per node. mpirun reads $PBS_NODEFILE and sets OMPI_COMM_WORLD_RANK.
+mpirun --map-by ppr:1:node -hostfile ${PBS_NODEFILE} \
+    bash ${PBS_O_WORKDIR}/scripts/sample_8node_worker.sh \
+        "${EPOCHS[*]}" "${K}" "${L}" "${SIGMA}" "${RUN_SUFFIX}"

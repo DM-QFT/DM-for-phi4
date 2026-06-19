@@ -1,0 +1,29 @@
+#!/bin/bash -l
+#PBS -q short-g
+#PBS -l select=1
+#PBS -l walltime=00:10:00
+#PBS -W group_list=gw97
+#PBS -N dm_ess_k2705
+#PBS -j oe
+#PBS -m abe
+#PBS -M yangyang-tan@g.ecc.u-tokyo.ac.jp
+
+# MSE-equivalent ESS vs training epoch.  CPU-only analysis on PRE-GENERATED
+# samples — runs on Miyabi-G because nenv2 is aarch64.  Sample generation
+# is done separately by sample_phi4_sweep.py.
+
+set -e
+
+cd ${PBS_O_WORKDIR}
+
+JID=${PBS_JOBID%.opbs}
+echo "================================================================"
+echo "Job ID    : ${PBS_JOBID}"
+echo "Node      : $(hostname)"
+echo "Start     : $(date '+%F %T')"
+echo "================================================================"
+
+bash scripts/ess_mse_vs_epoch_and_run.sh
+
+echo
+echo "Finished : $(date '+%F %T')"
