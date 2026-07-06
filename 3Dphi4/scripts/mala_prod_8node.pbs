@@ -1,0 +1,64 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=8
+#PBS -l walltime=02:00:00
+#PBS -W group_list=gw97
+#PBS -N dm3d_mala_prod
+#PBS -j oe
+#PBS -m abe
+#PBS -M yangyang-tan@g.ecc.u-tokyo.ac.jp
+
+# 8-node MALA+shift+cluster production for the DM.tex appendix MALA rows.
+#
+# Each node refines a 64-config shard of the pre-filtered cross-L DM
+# ensembles (multi-L {4,8,16,32}, epoch=10000) for all three kappas,
+# 2000 steps each, with the validated recipe
+#   MALA c=3 (acc~0.5) + global shift every 2 + embedded SW cluster every 10.
+#
+# Prerequisites (already on disk):
+#   runs/.../data_crossL/samples_filtered512_k{0.18,0.1923,0.2}_ep10000.npy
+#
+# Submit:   qsub scripts/mala_prod_8node.pbs
+# Merge:    python scripts/merge_mala_shards.py        (after the job)
+
+set -e
+# hardcoded: robust against submit-directory and inherited PBS_O_WORKDIR
+cd /work/gw97/w97000/project/DM/3Dphi4
+
+# ---- Pre-flight ----
+MISSING=()
+for spec in "0.18:_sigma200" "0.1923:" "0.2:_sigma400"; do
+    K="${spec%%:*}"; SUF="${spec#*:}"
+    RD="runs/phi4_3d_Lmulti4-8-16-32_k${K}_l0.9_ncsnpp${SUF}"
+    [[ -f "$RD/models/epoch=10000.ckpt" ]] || MISSING+=("$RD/models/epoch=10000.ckpt")
+    [[ -f "$RD/data_crossL/samples_filtered512_k${K}_ep10000.npy" ]] || \
+        MISSING+=("$RD/data_crossL/samples_filtered512_k${K}_ep10000.npy")
+done
+if (( ${#MISSING[@]} > 0 )); then
+    echo "ERROR: missing prerequisites:"; printf '  %s\n' "${MISSING[@]}"; exit 1
+fi
+mkdir -p results/mala_pipeline_logs
+
+cat <<EOF
+========================================
+Job ID  : ${PBS_JOBID:-<no-pbs>}
+Start   : $(date '+%F %T')
+Workdir : $(pwd)
+Nodes   : $(uniq ${PBS_NODEFILE:-/dev/null} 2>/dev/null | tr '\n' ' ')
+Recipe  : filtered init + MALA(c=3) + shift/2 + cluster/10 x 2000 steps
+Shards  : rank r -> configs [64r, 64(r+1))  (kappa=0.2 shard 7 has 21)
+========================================
+EOF
+
+# Only launch when running as the real submitted job. Inside other PBS jobs
+# (e.g. the VSCode tunnel) PBS_NODEFILE/PBS_O_WORKDIR are inherited from that
+# job, so gate on the job name instead.
+if [[ "${PBS_JOBNAME:-}" != "dm3d_mala_prod" ]]; then
+    echo "(not the dm3d_mala_prod job — preflight only)"
+    exit 0
+fi
+
+mpirun --map-by ppr:1:node -hostfile "${PBS_NODEFILE}" \
+    bash /work/gw97/w97000/project/DM/3Dphi4/scripts/mala_prod_worker.sh
+
+echo "Finished : $(date '+%F %T')"

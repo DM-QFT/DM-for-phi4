@@ -219,6 +219,109 @@ def loop_circulation(model, center, t_value, radius=0.1, n_steps=128, n_loops=32
 
 ---
 
+## 4.5. 更简单的等价测法（cosine similarity 风格）
+
+主方法 ρ 与下面三个测法**同源** —— 都在测 Jacobian 的反对称部分
+$A=\tfrac12(J-J^\top)$，只是表达和成本不同。核心观察：
+
+$$
+\text{守恒} \iff J = J^\top \iff A = 0,
+$$
+
+所以"守恒性"本质就是"$J$ 和 $J^\top$ 有多像"，这天然是一个 cosine。
+
+### 4.5.1 矩阵级 cosine（= ρ 换皮）
+
+把 $J,\,J^\top$ 当向量做 Frobenius cosine：
+
+$$
+\cos\angle(J,J^\top)
+= \frac{\langle J,J^\top\rangle_F}{\lVert J\rVert_F\,\lVert J^\top\rVert_F}
+= \frac{\sum_{ij}J_{ij}J_{ji}}{\lVert J\rVert_F^2}.
+$$
+
+代入 $J = S + A$ 可精确得到
+
+$$
+\boxed{\;\cos\angle(J,J^\top)
+= \frac{\lVert S\rVert_F^2 - \lVert A\rVert_F^2}{\lVert S\rVert_F^2 + \lVert A\rVert_F^2}
+= 1 - 2\rho^2\;}
+$$
+
+即 $\cos = 1$ ⟺ 完全守恒，$\rho^2 = (1-\cos)/2$。好处是读数直观（1 = 守恒），
+坏处是**不比 ρ 便宜**，仍需 Jacobian 探针。
+
+### 4.5.2 向量级 cosine（最贴近 "cosine similarity"）
+
+对随机探针 $v$ 比较 $Jv$ 与 $J^\top v$ 的方向：
+
+$$
+\cos\big(Jv,\,J^\top v\big)
+= \frac{(Jv)\cdot(J^\top v)}{\lVert Jv\rVert\,\lVert J^\top v\rVert}.
+$$
+
+因为 $J$ 对称 ⟺ 对**所有** $v$ 都有 $Jv = J^\top v$，守恒时这个 cosine 恒为 1。
+
+```python
+v = torch.randn_like(x)
+s = model(x, t)
+JTv = torch.autograd.grad(s, x, v, retain_graph=True)[0]            # J^T v  (反向/VJP)
+Jv  = torch.func.jvp(lambda z: model(z, t), (x,), (v,))[1]          # J v    (前向/JVP)
+cos = torch.cosine_similarity(Jv.flatten(1), JTv.flatten(1), dim=1) # 接近 1 = 守恒
+```
+
+> 注意：cosine 只比**方向**、不比模长。$Jv$ 与 $J^\top v$ 方向一致但模长不同时仍可能非对称。
+> 要同时约束方向和模长，用相对差 $\lVert Jv - J^\top v\rVert / \lVert Jv + J^\top v\rVert$
+> —— 那就退回 ρ。所以 cosine 是"更宽松但更直观"的版本。
+
+### 4.5.3 有限差分对称性检验（**完全不用 autodiff，最省最稳**）
+
+守恒 ⟺ 混合偏导对称（$u^\top J v = v^\top J u$）。只做**前向 forward**、有限差分：
+取随机方向 $u, v$ 与基点 $x$，
+
+$$
+a = u\cdot\big[s(x+\epsilon v) - s(x-\epsilon v)\big] \approx 2\epsilon\,u^\top J v,\qquad
+b = v\cdot\big[s(x+\epsilon u) - s(x-\epsilon u)\big] \approx 2\epsilon\,v^\top J u.
+$$
+
+守恒时 $a = b$。归一化非守恒分数（对 $u,v,x$ 平均，$2\epsilon$ 约掉）：
+
+$$
+\frac{\mathbb{E}\big[(a-b)^2\big]}{\mathbb{E}\big[a^2+b^2\big]} = 2\rho^2,
+\qquad\Longrightarrow\qquad
+\rho^2 \approx \frac12\,\frac{\mathbb{E}[(a-b)^2]}{\mathbb{E}[a^2+b^2]}.
+$$
+
+```python
+eps = 1e-3
+u, v = torch.randn_like(x), torch.randn_like(x)
+sdot_v = model(x + eps*v, t) - model(x - eps*v, t)
+sdot_u = model(x + eps*u, t) - model(x - eps*u, t)
+a = (u * sdot_v).flatten(1).sum(1)     # ∝ uᵀ J v
+b = (v * sdot_u).flatten(1).sum(1)     # ∝ vᵀ J u
+rho2 = 0.5 * (a - b).pow(2).mean() / (a.pow(2) + b.pow(2)).mean()
+```
+
+额外好处：
+
+- **只用 4 次前向**，无反向、无二阶图 —— 最省显存、最快。
+- **对网络可微性不敏感**：score-based net 用 LeakyReLU（见 §A / 论文 Table 3），二阶导在折点
+  病态，double-backprop 会踩坑；有限差分不在乎。
+- 唯一要调 $\epsilon$：归一化 $[-1,1]$ 空间取 $\sim 10^{-3}$，太小被浮点噪声淹没、太大线性化失效，
+  扫两三个值看 plateau。
+
+### 4.5.4 选哪个
+
+| 方法 | 成本 | 直观度 | 备注 |
+|------|------|--------|------|
+| ρ（Frobenius，§3） | 1 JVP + 1 VJP | 中（占比） | 主指标 |
+| $\cos(Jv,J^\top v)$ | 1 JVP + 1 VJP | **高**（1=守恒） | 只比方向，最像 cos similarity |
+| 有限差分对称性 | **4× forward** | 中 | **最便宜最稳**，LeakyReLU 也安全 |
+
+三者同源，换算关系 $\cos = 1 - 2\rho^2$。**要快要稳用有限差分，要一眼读懂用向量级 cosine。**
+
+---
+
 ## 5. 评估协议
 
 1. **在 $p_t$ 上评估**，不是只在干净数据点：用 `_perturb_to_t` 把真实组态扰动到层级 $t$

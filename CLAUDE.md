@@ -72,3 +72,19 @@ Typical sampling flags: `--method em --num_steps 2000 --schedule log --num_sampl
 ## Checkpoints
 
 - **Log-scale saving** : `LogScaleCheckpoint` callback saves ~50–100 ckpts geometrically spaced
+
+## Compute (Claude)
+
+Claude runs **directly on a Miyabi compute node** via the VSCode tunnel (memory
+`miyabi-vscode-tunnel`): Bash executes on `mg0xxx` with the GPU visible, so just run
+`python`/`julia` directly — no tmux bridge, no login-node dispatch.
+
+- **Never `qsub`** — hard-blocked; prepare the script and let the user submit it.
+- **One job per GPU.** Everything is tied to the tunnel job's walltime.
+- For waits use `tail -F` / background, never `sleep`.
+- nenv2 may not auto-activate in a batch-job terminal → run the `nenv2` alias manually
+  (it has numpy+h5py but NO scipy). `/tmp` is node-local. See memory `miyabi-env-constraints`.
+- **Output files are deliverables, not temp.** Save generated figures / `.dat` / `.csv` /
+  analysis artifacts **under the current working directory** (e.g. `4Dphi4/...`), never in
+  the session scratchpad or `/tmp`. Reserve the scratchpad only for genuinely throwaway
+  intermediates. When in doubt, treat a plot/data file as a deliverable.

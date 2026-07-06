@@ -154,13 +154,23 @@ class DiffusionModel(pl.LightningModule):
 
     @torch.no_grad()
     def sample(self, num_samples=64, num_steps=500, eps=1e-5, schedule='linear',
-               use_ema=True):
-        """Euler-Maruyama sampler.
+               use_ema=True, corrector_steps=0, corrector_snr=0.16,
+               corrector_tmax=0.1):
+        """Euler-Maruyama sampler, optionally predictor-corrector.
 
         Args:
             schedule: 'linear', 'quadratic', 'cosine', 'log', or 'power_N'.
                       Aggressiveness: linear < quadratic(Δt∝√t) < cosine
                       < log(Δt∝t) < power_4(Δt∝t^¾) < power_6 ...
+            corrector_steps: if >0, run this many unadjusted Langevin corrector
+                      steps at the fixed current time after each EM predictor
+                      step (Song et al. 2021 PC sampler; cf. the annealed
+                      Langevin of arXiv:2502.05504). 0 recovers plain EM.
+            corrector_snr: target signal-to-noise ratio setting the Langevin
+                      step size, ||grad|| / ||noise|| normalized per batch.
+            corrector_tmax: only run correctors once t < corrector_tmax, where
+                      the score is accurate and the cost concentrates near the
+                      small noise scales (as in arXiv:2502.05504).
         """
         self.eval()
         device = self.device
@@ -177,8 +187,27 @@ class DiffusionModel(pl.LightningModule):
                 batch_t.fill_(time_steps[i].item())
                 g = self.diffusion_coeff_fn(time_steps[i])
                 dt = dt_all[i]
+                # predictor: one EM reverse-SDE step
                 mean_x = x + g**2 * self(x, batch_t) * dt
                 x = mean_x + g * torch.sqrt(dt) * torch.randn_like(x)
+
+                # corrector: k unadjusted Langevin steps at the fixed new time,
+                # only once the noise scale is small enough (t < corrector_tmax)
+                t_next = time_steps[i + 1].item()
+                if corrector_steps > 0 and t_next < corrector_tmax:
+                    batch_t.fill_(t_next)
+                    for _ in range(corrector_steps):
+                        grad = self(x, batch_t)
+                        noise = torch.randn_like(x)
+                        gnorm = grad.flatten(1).norm(dim=1).clamp_min(1e-12)
+                        nnorm = noise.flatten(1).norm(dim=1)
+                        # SNR-tuned Langevin step size (Song et al. 2021)
+                        step = (2 * (corrector_snr * nnorm / gnorm) ** 2)
+                        step = self._bcast(step)
+                        x = x + step * grad + torch.sqrt(2 * step) * noise
+            if corrector_steps > 0:
+                # a final corrector at eps keeps the last point on p_eps
+                return x
         return mean_x
 
     def _sigma_to_t(self, sigma_val):

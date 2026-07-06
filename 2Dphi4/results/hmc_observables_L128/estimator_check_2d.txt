@@ -1,0 +1,33 @@
+Estimator audit: single-site cumulants, 2D L=128 HMC (Wolff+FAHMC), lambda=0.022
+persite = kappa_n(x) per site then averaged over x; pooled = moments over all N*V values.
+Z2-even = odd raw moments set to 0 in the recursion (== {phi,-phi} augmentation).
+
+===== kappa=0.26  L=128  N=10240 =====
+  persite raw (old table)             k2=0.910420  k4=-0.272460  k6=0.599199  k8=-3.1550
+  persite Z2-even (new table)         k2=0.910515  k4=-0.272571  k6=0.602506  k8=-3.1935
+  pooled raw                          k2=0.910514  k4=-0.272147  k6=0.600359  k8=-3.1489
+  pooled Z2-even                      k2=0.910515  k4=-0.272148  k6=0.600365  k8=-3.1489
+  persite Z2-even, last N=2048        k2=0.910745  k4=-0.274451  k6=0.610643  k8=-3.3558
+  persite raw,     last N=2048        k2=0.910276  k4=-0.273855  k6=0.593848  k8=-3.1633
+  persite via interleave, N=2048      k2=0.910745  k4=-0.274451  k6=0.610643  k8=-3.3558
+  interleave vs even-moment formula: max|diff| = 8.88e-15
+
+===== kappa=0.2705  L=128  N=10240 =====
+  persite raw (old table)             k2=1.420315  k4=-1.435404  k6=8.836309  k8=-121.1315
+  persite Z2-even (new table)         k2=1.420461  k4=-1.435979  k6=8.849206  k8=-121.4776
+  pooled raw                          k2=1.420434  k4=-1.434917  k6=8.834839  k8=-121.0661
+  pooled Z2-even                      k2=1.420461  k4=-1.435059  k6=8.836641  k8=-121.1071
+  persite Z2-even, last N=2048        k2=1.416689  k4=-1.426977  k6=8.778032  k8=-120.6985
+  persite raw,     last N=2048        k2=1.416105  k4=-1.424840  k6=8.723195  k8=-119.1898
+  persite via interleave, N=2048      k2=1.416689  k4=-1.426977  k6=8.778032  k8=-120.6985
+  interleave vs even-moment formula: max|diff| = 1.42e-14
+
+===== kappa=0.28  L=128  N=10240 =====
+  persite raw (old table)             k2=2.689804  k4=-9.800179  k6=171.028621  k8=-6394.8353
+  persite Z2-even (new table)         k2=2.689863  k4=-9.800489  k6=171.047270  k8=-6396.1871
+  pooled raw                          k2=2.689859  k4=-9.799028  k6=170.984761  k8=-6391.7247
+  pooled Z2-even                      k2=2.689863  k4=-9.799101  k6=170.987607  k8=-6391.9108
+  persite Z2-even, last N=2048        k2=2.688660  k4=-9.795535  k6=171.001615  k8=-6399.0965
+  persite raw,     last N=2048        k2=2.687950  k4=-9.786714  k6=170.636802  k8=-6374.9154
+  persite via interleave, N=2048      k2=2.688660  k4=-9.795535  k6=171.001615  k8=-6399.0965
+  interleave vs even-moment formula: max|diff| = 1.82e-12

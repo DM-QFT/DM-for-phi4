@@ -1,0 +1,44 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=8
+#PBS -l walltime=00:40:00
+#PBS -W group_list=gw97
+#PBS -N dm3d_kc_c100s
+#PBS -j oe
+#PBS -m abe
+#PBS -M yangyang-tan@g.ecc.u-tokyo.ac.jp
+
+# kappa_c=0.1923 only: learned-score MALA at c=100, 500 steps, full recipe.
+# Completes the (drift x step-size) matrix at kappa_c.
+#
+# Submit:   qsub scripts/mala_kc_c100s_8node.pbs
+# Merge:    python scripts/merge_mala_shards.py --tag kc_c100s --kappas 0.1923
+
+set -e
+cd /work/gw97/w97000/project/DM/3Dphi4
+
+RD="runs/phi4_3d_Lmulti4-8-16-32_k0.1923_l0.9_ncsnpp"
+for f in "$RD/models/epoch=10000.ckpt" \
+         "$RD/data_crossL/samples_filtered512_k0.1923_ep10000.npy"; do
+    [[ -f "$f" ]] || { echo "ERROR: missing $f"; exit 1; }
+done
+mkdir -p results/mala_pipeline_logs
+
+cat <<EOF
+========================================
+Job ID  : ${PBS_JOBID:-<no-pbs>}
+Start   : $(date '+%F %T')
+Nodes   : $(uniq ${PBS_NODEFILE:-/dev/null} 2>/dev/null | tr '\n' ' ')
+Test    : kappa_c, learned-score MALA c=100, 500 steps, shift/2 + cluster/10
+========================================
+EOF
+
+if [[ "${PBS_JOBNAME:-}" != "dm3d_kc_c100s" ]]; then
+    echo "(not the dm3d_kc_c100s job — preflight only)"
+    exit 0
+fi
+
+mpirun --map-by ppr:1:node -hostfile "${PBS_NODEFILE}" \
+    bash /work/gw97/w97000/project/DM/3Dphi4/scripts/mala_kc_c100s_worker.sh
+
+echo "Finished : $(date '+%F %T')"

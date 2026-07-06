@@ -1,0 +1,51 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=8
+#PBS -l walltime=01:00:00
+#PBS -W group_list=gw97
+#PBS -N dm3d_mala_c100s
+#PBS -j oe
+#PBS -m abe
+#PBS -M yangyang-tan@g.ecc.u-tokyo.ac.jp
+
+# Learned-score MALA at c=100, 500 steps, full recipe, all three kappas.
+# Companion to the exact-drift c=100 test: isolates the score-error
+# contribution to the rejection budget at large step size.
+#
+# Submit:   qsub scripts/mala_c100s_8node.pbs
+# Merge:    python scripts/merge_mala_shards.py --tag prod512f_500_c100s
+
+set -e
+cd /work/gw97/w97000/project/DM/3Dphi4
+
+MISSING=()
+for spec in "0.18:_sigma200" "0.1923:" "0.2:_sigma400"; do
+    K="${spec%%:*}"; SUF="${spec#*:}"
+    RD="runs/phi4_3d_Lmulti4-8-16-32_k${K}_l0.9_ncsnpp${SUF}"
+    [[ -f "$RD/models/epoch=10000.ckpt" ]] || MISSING+=("$RD/models/epoch=10000.ckpt")
+    [[ -f "$RD/data_crossL/samples_filtered512_k${K}_ep10000.npy" ]] || \
+        MISSING+=("$RD/data_crossL/samples_filtered512_k${K}_ep10000.npy")
+done
+if (( ${#MISSING[@]} > 0 )); then
+    echo "ERROR: missing prerequisites:"; printf '  %s\n' "${MISSING[@]}"; exit 1
+fi
+mkdir -p results/mala_pipeline_logs
+
+cat <<EOF
+========================================
+Job ID  : ${PBS_JOBID:-<no-pbs>}
+Start   : $(date '+%F %T')
+Nodes   : $(uniq ${PBS_NODEFILE:-/dev/null} 2>/dev/null | tr '\n' ' ')
+Test    : learned-score MALA c=100, 500 steps, shift/2 + cluster/10
+========================================
+EOF
+
+if [[ "${PBS_JOBNAME:-}" != "dm3d_mala_c100s" ]]; then
+    echo "(not the dm3d_mala_c100s job — preflight only)"
+    exit 0
+fi
+
+mpirun --map-by ppr:1:node -hostfile "${PBS_NODEFILE}" \
+    bash /work/gw97/w97000/project/DM/3Dphi4/scripts/mala_c100s_worker.sh
+
+echo "Finished : $(date '+%F %T')"

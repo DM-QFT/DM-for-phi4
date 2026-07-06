@@ -1,0 +1,33 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=24
+#PBS -l walltime=00:40:00
+#PBS -W group_list=gw97
+#PBS -N dm3d_finals24
+#PBS -j oe
+#PBS -m abe
+#PBS -M yangyang-tan@g.ecc.u-tokyo.ac.jp
+
+# Score-drift production on 24 nodes, 5000 steps, matched to the exact-drift
+# run for a clean parallel table (only the drift differs).
+# 3 kappas x 8 shards.  24 nodes -> regular-g routes to medium-g.
+#
+# Merge:  python scripts/merge_mala_shards.py --tag final_score \
+#            --kappas 0.18 0.1923 0.2
+
+set -e
+cd /work/gw97/w97000/project/DM/3Dphi4
+for spec in "0.18:_sigma200" "0.1923:" "0.2:_sigma400"; do
+    K="${spec%%:*}"; SUF="${spec#*:}"
+    RD="runs/phi4_3d_Lmulti4-8-16-32_k${K}_l0.9_ncsnpp${SUF}"
+    [[ -f "$RD/data_crossL/samples_filtered512_k${K}_ep10000.npy" ]] || \
+        { echo "ERROR: missing filtered init for k=$K"; exit 1; }
+done
+mkdir -p results/mala_pipeline_logs
+echo "Job ${PBS_JOBID:-?}  start $(date '+%F %T')  nodes: $(uniq ${PBS_NODEFILE:-/dev/null} 2>/dev/null | wc -l)"
+if [[ "${PBS_JOBNAME:-}" != "dm3d_finals24" ]]; then
+    echo "(not the dm3d_finals24 job — preflight only)"; exit 0
+fi
+mpirun --map-by ppr:1:node -hostfile "${PBS_NODEFILE}" \
+    bash /work/gw97/w97000/project/DM/3Dphi4/scripts/final_score_worker24.sh
+echo "Finished $(date '+%F %T')"

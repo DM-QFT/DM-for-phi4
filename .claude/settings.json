@@ -1,4 +1,12 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash"
+    ],
+    "deny": [
+      "Bash(qsub *)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -6,7 +14,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r .tool_input.command | grep -q nenv2 && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"BLOCKED: nenv2 on login node — submit via qsub.\"}}'; exit 0"
+            "command": "jq -r '.tool_input.command // empty' | grep -qE '(^|[^[:alnum:]_])qsub([^[:alnum:]_]|$)' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"BLOCKED: qsub auto-submission is disabled. Prepare the .pbs script and let the user submit it manually.\"}}'; exit 0"
           }
         ]
       }

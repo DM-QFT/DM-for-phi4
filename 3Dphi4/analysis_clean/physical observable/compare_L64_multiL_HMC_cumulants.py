@@ -79,7 +79,9 @@ def hmc_path(k: float, lam: float, L: int = 64) -> Path:
 def hmc_norm_range(k: float, lam: float, L: int = 64) -> tuple[float, float]:
     p = Path(f"trainingdata/cfgs_wolff_fahmc_k={k}_l={lam}_{L}^3.jld2.norm.json")
     if not p.exists():
-        raise FileNotFoundError(p)
+        # fallback: .norm.json caches cfgs_min/max; recompute from the ensemble
+        cfgs = load_hmc_3d(hmc_path(k, lam, L))
+        return float(cfgs.min()), float(cfgs.max())
     d = json.loads(p.read_text())
     return float(d["cfgs_min"]), float(d["cfgs_max"])
 
@@ -144,6 +146,22 @@ def dm_path_multiL(L_train: int, k: float, lam: float,
         if p.exists():
             return p
     raise FileNotFoundError(f"None of: {[str(p) for p in cands]}")
+
+
+def mala_path_multiL(k: float, lam: float, tag: str) -> Path:
+    """MALA-refined ensemble of the largest multi-L model (L_train=32).
+
+    Written by 3Dphi4/sample_phi4_crossL_mala.py to
+    {run_dir}/data_crossL_mala/{tag}/final.npy, physical field (L,L,L,N).
+    """
+    sigma_tag = ""
+    if abs(k - 0.2)  < 1e-9: sigma_tag = "_sigma400"
+    if abs(k - 0.18) < 1e-9: sigma_tag = "_sigma200"
+    p = (Path(f"runs/phi4_3d_Lmulti4-8-16-32_k{k}_l{lam}_ncsnpp{sigma_tag}")
+         / "data_crossL_mala" / tag / "final.npy")
+    if not p.exists():
+        raise FileNotFoundError(p)
+    return p
 
 
 # In-distribution L=64 single-L samples. Available for the three kappas where
@@ -526,6 +544,11 @@ def main():
                          "and the pooled (cfg,x) estimator of Aarts et al. "
                          "(2410.21212v2) eq. (5.11) as a cross-check. "
                          "Bootstrap resamples cfgs (the independent unit).")
+    ap.add_argument("--mala_tag", type=str, default=None,
+                    help="Also include the MALA-refined DM{4,8,16,32} ensemble "
+                         "from data_crossL_mala/{tag}/final.npy. MALA rows are "
+                         "never filtered: the exact-action MH correction "
+                         "replaces the support filters.")
     ap.add_argument("--no_filter_dm_oor", action="store_true",
                     help="disable the default DM out-of-range filter (drops "
                          "any DM cfg with a site outside the HMC training "
@@ -620,6 +643,17 @@ def main():
                 (f"DM_L64single_ep{ep_dm64}", dm64_z2,
                  str(f_dm64) + f"  (in-distribution L=64, ep={ep_dm64})")
             )
+
+        # MALA-refined DM{4,8,16,32} ensemble. Never filtered (exact-action
+        # MH correction replaces the support filters).
+        if args.mala_tag is not None:
+            try:
+                f_mala = mala_path_multiL(k, args.lam, args.mala_tag)
+                mala = load_dm_3d(f_mala)
+                mala_z2 = np.concatenate([mala, -mala], axis=0)
+                sources.append(("DM_multiL4-8-16-32_MALA", mala_z2, str(f_mala)))
+            except FileNotFoundError as e:
+                print(f"[skip] kappa={k}  MALA: {e}")
 
         print(f"--- kappa={k}, lam={args.lam}  (raw range from HMC: [{lo:.4f}, {hi:.4f}]) ---")
         for name, cfgs, path in sources:
@@ -773,6 +807,8 @@ def _src_label(name: str) -> str:
         return r"DM\,$\{4,8,16\}$"
     if name == "DM_multiL4-8-16-32":
         return r"DM\,$\{4,8,16,32\}$"
+    if name == "DM_multiL4-8-16-32_MALA":
+        return r"DM\,$\{4,8,16,32\}$+MALA"
     if name.startswith("DM_L64single"):
         return r"DM\,$L{=}64$"
     return name.replace("_", r"\_")

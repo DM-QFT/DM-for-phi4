@@ -1,0 +1,26 @@
+#!/bin/bash -l
+#PBS -q short-g
+#PBS -l select=8
+#PBS -l walltime=01:00:00
+#PBS -W group_list=gw97
+#PBS -N dm3d_pcinit
+#PBS -j oe
+#PBS -m abe
+#PBS -M yangyang-tan@g.ecc.u-tokyo.ac.jp
+
+# PC5-full init -> learned-score MALA(c=3) + shift/2 + cluster/10, 2000 steps,
+# kappa_c, 8 shards. Merge: python scripts/merge_mala_shards.py \
+#   --tag pcinit_score --kappas 0.1923
+
+set -e
+cd /work/gw97/w97000/project/DM/3Dphi4
+RD="runs/phi4_3d_Lmulti4-8-16-32_k0.1923_l0.9_ncsnpp"
+[[ -f "$RD/data_crossL/samples_pcfull_pc5_filtered.npy" ]] || { echo "ERROR: no PC5-full init"; exit 1; }
+mkdir -p results/mala_pipeline_logs
+echo "Job ${PBS_JOBID:-?}  start $(date '+%F %T')  nodes: $(uniq ${PBS_NODEFILE:-/dev/null} 2>/dev/null | wc -l)"
+if [[ "${PBS_JOBNAME:-}" != "dm3d_pcinit" ]]; then
+    echo "(not the dm3d_pcinit job — preflight only)"; exit 0
+fi
+mpirun --map-by ppr:1:node -hostfile "${PBS_NODEFILE}" \
+    bash /work/gw97/w97000/project/DM/3Dphi4/scripts/pcinit_mala_worker.sh
+echo "Finished $(date '+%F %T')"

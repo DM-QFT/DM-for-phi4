@@ -39,6 +39,13 @@ def main():
     p.add_argument("--schedule", type=str, default="log",
                    choices=["log", "linear", "quadratic", "cosine"])
     p.add_argument("--n_repeats", type=int, default=4)
+    p.add_argument("--corrector_steps", type=int, default=0,
+                   help="Predictor-corrector: unadjusted Langevin steps at "
+                        "fixed t after each EM step (0 = plain EM)")
+    p.add_argument("--corrector_snr", type=float, default=0.16,
+                   help="Target SNR for the Langevin corrector step size")
+    p.add_argument("--corrector_tmax", type=float, default=0.1,
+                   help="Only apply correctors once t < this (small noise scales)")
     p.add_argument("--device", type=str, default="cuda:2")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--run_dir", type=str, default=None,
@@ -78,7 +85,13 @@ def main():
         score_model = ScoreNet3D(marginal_prob_std_fn, periodic=True)
     else:
         score_model = ScoreNet3DUNetPeriodic(marginal_prob_std_fn)
-    model = DiffusionModel3D.load_from_checkpoint(ckpt_path, score_model=score_model)
+    # compile(default): reduce-overhead corrupts F.interpolate(nearest) in
+    # NCSNpp (~11% propagator bias); default is the verified-safe mode.
+    score_model = torch.compile(score_model, mode="default", dynamic=False)
+    # map_location: ckpts were saved on a multi-GPU box (cuda:3); this node
+    # exposes a single device.
+    model = DiffusionModel3D.load_from_checkpoint(ckpt_path, score_model=score_model,
+                                                  map_location="cpu")
     model.L = args.L_sample
     model = model.to(args.device).eval()
 
@@ -87,8 +100,9 @@ def main():
     if args.tag is not None:
         tag = args.tag
     else:
+        ctag = f"_pc{args.corrector_steps}" if args.corrector_steps > 0 else ""
         tag = (f"crossL_train{args.L_train}_sample{args.L_sample}_"
-               f"{args.method}_{args.schedule}_steps{args.num_steps}_ep{args.ep}")
+               f"{args.method}_{args.schedule}_steps{args.num_steps}_ep{args.ep}{ctag}")
 
     print(f"Sampling [{args.method}/{args.schedule}] num_steps={args.num_steps} "
           f"n_repeats={args.n_repeats} num/rep={args.num_samples}  seed={args.seed}")
@@ -98,7 +112,10 @@ def main():
         torch.cuda.manual_seed_all(args.seed + i)
         if args.method == "em":
             reps.append(model.sample(args.num_samples, args.num_steps,
-                                     schedule=args.schedule))
+                                     schedule=args.schedule,
+                                     corrector_steps=args.corrector_steps,
+                                     corrector_snr=args.corrector_snr,
+                                     corrector_tmax=args.corrector_tmax))
         else:
             reps.append(model.sample_ode(args.num_samples, args.num_steps,
                                          schedule=args.schedule, method=args.ode_method))
