@@ -6,6 +6,7 @@ Supports both 2D and 3D data via the ``spatial_dims`` parameter (default 2).
 
 import contextlib
 import functools
+import math
 
 import numpy as np
 import torch
@@ -33,9 +34,16 @@ class DiffusionModel(pl.LightningModule):
     """
 
     def __init__(self, score_model, sigma=25.0, lr=1e-3, L=32, ema_decay=0.9999,
-                 ema_start_epoch=0, norm_min=None, norm_max=None, spatial_dims=2):
+                 ema_start_epoch=0, norm_min=None, norm_max=None, spatial_dims=2,
+                 zero_mode_loss_weight=0.0):
         super().__init__()
         self.save_hyperparameters(ignore=['score_model'])
+        if (not np.isfinite(zero_mode_loss_weight)
+                or zero_mode_loss_weight < 0.0):
+            raise ValueError(
+                "zero_mode_loss_weight must be finite and non-negative, got "
+                f"{zero_mode_loss_weight}"
+            )
         self.sigma = sigma
         self.lr = lr
         self.L = L
@@ -43,6 +51,7 @@ class DiffusionModel(pl.LightningModule):
         self.norm_min = norm_min
         self.norm_max = norm_max
         self.spatial_dims = spatial_dims
+        self.zero_mode_loss_weight = float(zero_mode_loss_weight)
         self.score_model = score_model
         self.marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=sigma)
         self.diffusion_coeff_fn = functools.partial(diffusion_coeff, sigma=sigma)
@@ -59,23 +68,87 @@ class DiffusionModel(pl.LightningModule):
     def _sum_axes(self):
         return tuple(range(1, self.spatial_dims + 2))
 
+    def _spatial_axes(self):
+        return tuple(range(2, self.spatial_dims + 2))
+
+    def _dsm_loss_components(self, residual):
+        """Return full DSM and orthonormal zero-mode errors per sample.
+
+        ``residual`` is the noise-prediction error ``sigma(t) * score + z``
+        with shape ``(B, C, *spatial)``.  For each channel, the orthonormal
+        zero Fourier component is ``sqrt(V) * mean_spatial(residual)``;
+        consequently its squared error is ``V * mean_spatial(residual)^2``.
+
+        The volume is inferred from the runtime tensor rather than ``self.L``
+        so this projection remains valid when the same convolutional model is
+        evaluated or trained at a different lattice size.
+        """
+        expected_ndim = self.spatial_dims + 2
+        if residual.ndim != expected_ndim:
+            raise ValueError(
+                f"expected residual with {expected_ndim} dimensions "
+                f"(B,C,*spatial), got shape {tuple(residual.shape)}"
+            )
+        volume = math.prod(residual.shape[2:])
+        full = residual.square().sum(dim=self._sum_axes())
+        # Accumulate the global projection in fp32 even under bf16 autocast;
+        # otherwise summing thousands of sites can noticeably quantise k=0.
+        projection_input = (
+            residual.float()
+            if residual.dtype in (torch.float16, torch.bfloat16)
+            else residual
+        )
+        spatial_mean = projection_input.mean(dim=self._spatial_axes())
+        zero_mode = volume * spatial_mean.square().sum(dim=1)
+        return full, zero_mode, volume
+
     def forward(self, x, t):
         return self.score_model(x, t)
 
-    def loss_fn(self, x, eps=1e-5):
+    def loss_fn(self, x, eps=1e-5, return_components=False):
         random_t = torch.rand(x.shape[0], device=x.device) * (1. - eps) + eps
         z = torch.randn_like(x)
         std = self.marginal_prob_std_fn(random_t)
         perturbed_x = x + z * self._bcast(std)
         score = self(perturbed_x, random_t)
-        per_sample_loss = torch.sum((score * self._bcast(std) + z)**2, dim=self._sum_axes())
-        return torch.mean(per_sample_loss), per_sample_loss.detach(), random_t.detach()
+        residual = score * self._bcast(std) + z
+        dsm_per_sample, k0_per_sample, _ = self._dsm_loss_components(residual)
+
+        # The full DSM already contains one copy of this orthonormal k=0 mode.
+        # The auxiliary weight therefore controls its *additional per-mode*
+        # weight: weight=1 doubles k=0 relative to every individual nonzero
+        # Fourier mode.  Do not multiply by V again here.  Although k=0 is only
+        # O(1) of the O(V) loss value, its coherent parameter-gradient can
+        # already be comparable to the gradient of the full DSM term.
+        k0_aux_per_sample = self.zero_mode_loss_weight * k0_per_sample
+        per_sample_loss = dsm_per_sample + k0_aux_per_sample
+        loss = per_sample_loss.mean()
+        result = (loss, per_sample_loss.detach(), random_t.detach())
+        if return_components:
+            components = {
+                "dsm": dsm_per_sample.detach(),
+                "k0": k0_per_sample.detach(),
+                "k0_aux": k0_aux_per_sample.detach(),
+            }
+            return (*result, components)
+        return result
 
     def training_step(self, batch, batch_idx):
         x, _ = batch
-        loss, per_sample_loss, random_t = self.loss_fn(x)
+        loss, per_sample_loss, random_t, components = self.loss_fn(
+            x, return_components=True
+        )
         self.log('train_loss', loss, prog_bar=True, on_step=True, on_epoch=False)
         self.log('train_loss_epoch', loss, prog_bar=True, on_step=False, on_epoch=True)
+        self.log('train_loss_dsm_epoch', components['dsm'].mean(),
+                 on_step=False, on_epoch=True)
+        self.log('train_loss_k0_epoch', components['k0'].mean(),
+                 on_step=False, on_epoch=True)
+        self.log('train_loss_k0_aux_epoch', components['k0_aux'].mean(),
+                 on_step=False, on_epoch=True)
+        self.log('train_loss_nonzero_epoch',
+                 (components['dsm'] - components['k0']).mean(),
+                 on_step=False, on_epoch=True)
 
         t_bins = [
             (0.0, 0.2, 'loss_UV'),   # small t → low noise → UV/high-k
@@ -155,7 +228,7 @@ class DiffusionModel(pl.LightningModule):
     @torch.no_grad()
     def sample(self, num_samples=64, num_steps=500, eps=1e-5, schedule='linear',
                use_ema=True, corrector_steps=0, corrector_snr=0.16,
-               corrector_tmax=0.1):
+               corrector_tmax=0.1, symmetrize_z2=False, z2_center=0.0):
         """Euler-Maruyama sampler, optionally predictor-corrector.
 
         Args:
@@ -171,6 +244,9 @@ class DiffusionModel(pl.LightningModule):
             corrector_tmax: only run correctors once t < corrector_tmax, where
                       the score is accurate and the cost concentrates near the
                       small noise scales (as in arXiv:2502.05504).
+            symmetrize_z2: project the score onto its odd component under the
+                      reflection ``x -> 2*z2_center - x``.  This doubles NFE.
+            z2_center: normalized coordinate corresponding to physical phi=0.
         """
         self.eval()
         device = self.device
@@ -183,12 +259,22 @@ class DiffusionModel(pl.LightningModule):
             x = torch.randn(*self._sample_shape(num_samples), device=device) * init_std
             batch_t = torch.empty(num_samples, device=device)
 
+            def eval_score(state):
+                score = self(state, batch_t)
+                if not symmetrize_z2:
+                    return score
+                reflected = 2.0 * z2_center - state
+                reflected_score = self(reflected, batch_t)
+                # Subtract in fp32 so bf16 cancellation does not leave an
+                # artificial even component at small noise scales.
+                return 0.5 * (score.float() - reflected_score.float())
+
             for i in tqdm(range(num_steps), desc="Sampling (EM)"):
                 batch_t.fill_(time_steps[i].item())
                 g = self.diffusion_coeff_fn(time_steps[i])
                 dt = dt_all[i]
                 # predictor: one EM reverse-SDE step
-                mean_x = x + g**2 * self(x, batch_t) * dt
+                mean_x = x + g**2 * eval_score(x) * dt
                 x = mean_x + g * torch.sqrt(dt) * torch.randn_like(x)
 
                 # corrector: k unadjusted Langevin steps at the fixed new time,
@@ -197,7 +283,7 @@ class DiffusionModel(pl.LightningModule):
                 if corrector_steps > 0 and t_next < corrector_tmax:
                     batch_t.fill_(t_next)
                     for _ in range(corrector_steps):
-                        grad = self(x, batch_t)
+                        grad = eval_score(x)
                         noise = torch.randn_like(x)
                         gnorm = grad.flatten(1).norm(dim=1).clamp_min(1e-12)
                         nnorm = noise.flatten(1).norm(dim=1)

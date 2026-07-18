@@ -1,0 +1,116 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 大型二进制数据
+*.npy
+*.jld2
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.ckpt
+*.dat
+*.norm.json
+
+# 训练输出目录
+data/
+models/
+runs/
+lightning_logs/
+
+# 根目录扫描数据
+/scan_kappa_fahmc/
+/scan_kappa_wolff_fahmc/
+
+# 2D phi4 大型子目录
+2Dphi4/trainingdata/
+2Dphi4/runs/
+2Dphi4/scan_kappa*/
+2Dphi4/lightning_logs/
+2Dphi4/old/
+2Dphi4/2d_phi4-master/
+2Dphi4/lattice-phi4-master/
+
+# 3D phi4 大型子目录
+3Dphi4/trainingdata/
+3Dphi4/runs/
+3Dphi4/scan_kappa*/
+3Dphi4/old/
+
+# LaTeX 构建产物
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.synctex.gz
+*.nav
+*.snm
+*.toc
+*.run.xml
+*-blx.bib
+texput.log
+
+# 生成的图片和数据（draft/figures/ 中的论文图保留）
+*.png
+*.svg
+*.csv
+/figures/
+/old/
+
+# Overleaf（独立 git 仓库）
+overleaf/
+
+# 第三方参考实现
+references/
+
+# MNIST 原始数据
+MNIST/raw/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# IDE 配置
+.vscode/
+.cursor/
+
+# === git 初始化时补充（2026-06-20）===
+# Core dump（程序崩溃转储，可达数 GB，例如 core.mg0022.python.107767）
+core.*
+
+# 集群作业输出（UGE/PBS 的 stdout/stderr，例如 dm3d_sample.o1978072）
+*.o[0-9]*
+*.e[0-9]*
+*.po[0-9]*
+*.pe[0-9]*
+
+# numpy 压缩存档（与已忽略的 *.npy 保持一致）
+*.npz
+
+# 所有 PDF（论文/slides/figure 编译产物及文档，均不入库；源 .tex/脚本仍跟踪）
+*.pdf
+
+# Claude Code 本地配置（仅 settings.json 入库）
+.claude/settings.local.json
+
+# === 与本论文 (2D/3D phi^4 diffusion) 无关或不公开的内容 ===
+# 论文草稿源码由 arXiv 承载，不入库
+/draft/
+# 其他物理课题 / 探索性目录
+/PIKDM/
+/Yukawa/
+/4Dphi4/
+/RGDM/
+/archive/
+# 个人材料与过时归档
+/docs/proposal/
+/docs/archive/
+/docs/yukawa_force_ratio_investigation.md
+/scripts/sync_overleaf.sh
+# 本仓库自身的元配置不入库
+/requirements.txt
+/CLAUDE.md
+/AGENTS.md
+/.claude/
