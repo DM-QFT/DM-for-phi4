@@ -1,7 +1,34 @@
 using CUDA, Statistics, Test
 
 include(joinpath(@__DIR__, "..", "ModelB_fixed_sciml.jl"))
-include(joinpath(@__DIR__, "..", "ModelB.jl"))
+
+function reference_modelb_drift(u, two_kappa, m02, c3, inv_gamma)
+    left = circshift(u, (1, 0, 0))
+    right = circshift(u, (-1, 0, 0))
+    down = circshift(u, (0, 1, 0))
+    up = circshift(u, (0, -1, 0))
+    nearest_sum = left .+ right .+ down .+ up
+    diagonal_sum =
+        circshift(u, (1, 1, 0)) .+ circshift(u, (1, -1, 0)) .+
+        circshift(u, (-1, 1, 0)) .+ circshift(u, (-1, -1, 0))
+    second_neighbor_sum =
+        circshift(u, (2, 0, 0)) .+ circshift(u, (-2, 0, 0)) .+
+        circshift(u, (0, 2, 0)) .+ circshift(u, (0, -2, 0))
+
+    minus_biharmonic =
+        -20.0f0 .* u .+ 8.0f0 .* nearest_sum .-
+        2.0f0 .* diagonal_sum .- second_neighbor_sum
+    laplacian_phi = nearest_sum .- 4.0f0 .* u
+    laplacian_phi3 =
+        left .* left .* left .+ right .* right .* right .+
+        down .* down .* down .+ up .* up .* up .-
+        4.0f0 .* u .* u .* u
+    return inv_gamma .* (
+        two_kappa .* minus_biharmonic .+
+        m02 .* laplacian_phi .+
+        c3 .* laplacian_phi3
+    )
+end
 
 CUDA.seed!(20260718)
 u0 = CUDA.randn(Float32, 128, 128, 4)
@@ -44,6 +71,12 @@ final_mean = Array(mean(sol.u[end]; dims=(1, 2)))
     @test sol_repeated.u[end] == sol_reused.u[end]
     @test maximum(abs.(final_mean .- initial_mean)) < 2.0f-6
     @test all(isfinite, Array(sol.u[end]))
+
+    copied = modelB_2d_fixed(
+        prob.u0; tspan=(0.0f0, 0.0f0), seed=UInt64(1),
+    )
+    @test copied !== prob.u0
+    @test copied == prob.u0
 
     @test_throws AssertionError solve(prob, ModelBFixedSOSRA(); adaptive=true)
     @test_throws AssertionError solve(prob, ModelBFixedSOSRA(); dense=true)
@@ -103,9 +136,8 @@ end
     reference_q = 0.5f0 * noise_amplitude .* (
         reference_dW .+ SOSRA_INV_SQRT3 .* reference_dZ
     )
-    reference_k1 = similar(u)
-    launch_modelb_drift!(
-        reference_k1, u, two_kappa, m02, c3, 1.0f0,
+    reference_k1 = reference_modelb_drift(
+        u, two_kappa, m02, c3, 1.0f0,
     )
     reference_h01 = u .+ dt * SOSRA_A21 .* reference_k1 .+
                     SOSRA_B21 .* reference_q
@@ -132,12 +164,11 @@ end
         values = sin.(0.013f0 .* Float32.(1:(2 * L * L)))
         u = CuArray(reshape(values, L, L, 2))
         fixed_drift = similar(u)
-        reference_drift = similar(u)
+        reference_drift = reference_modelb_drift(
+            u, two_kappa, m02, c3, 1.0f0,
+        )
 
         modelb_fixed_problem_drift!(fixed_drift, u, p, 0.0f0)
-        launch_modelb_drift!(
-            reference_drift, u, two_kappa, m02, c3, 1.0f0,
-        )
         CUDA.synchronize()
 
         @test modelb_fixed_lattice(Val(L)) == expected_lattice

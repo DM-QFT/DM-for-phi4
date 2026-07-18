@@ -1,9 +1,0 @@
-metric	value	uncertainty	unit	context
-action_relative_drift	-0.112665328	0.035900547	percent	HMC stationarity, L=128, N=2048, 2 noise repetitions, t=5
-phi2_relative_drift	-0.022229088	0.018090329	percent	HMC stationarity, L=128, N=2048, 2 noise repetitions, t=5
-phi4_relative_drift	-0.086536628	0.034448626	percent	HMC stationarity, L=128, N=2048, 2 noise repetitions, t=5
-mu2_relative_drift	-0.140184749	0.035584835	percent	HMC stationarity, L=128, N=2048, 2 noise repetitions, t=5
-spatial_derivative_relative_drift	-0.107355344	0.033669574	percent	HMC stationarity, L=128, N=2048, 2 noise repetitions, t=5
-strong_field_relative_rmse	0.054323146	0.000440776	percent	8 HMC paths with common noise, t=0.5, fine SOSRA reference
-mass_max_error	4.45619539e-8	NA	field mean	HMC stationarity validation
-wall_seconds_per_physical_time	0.045876416	NA	seconds	GH200, single L=128 trajectory, t=20, median of 7 post-JIT runs

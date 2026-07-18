@@ -34,11 +34,10 @@ end
 function modelb_fixed_buffers(u; seed=rand(UInt64))
     check_modelb_fixed_state(u)
     lattice = Val(size(u, 1))
-    # The Philox generator is bound to the current CUDA stream. Reuse these
-    # buffers on that same stream for independent trajectories.
+    # Keep the random state with the buffers so other CUDA random calls do not
+    # change this solver's trajectory.
     rng = CUDA.cuRAND.LibraryRNG(
-        CUDA.cuRAND.CURAND_RNG_PSEUDO_PHILOX4_32_10;
-        stream=CUDA.stream(),
+        CUDA.cuRAND.CURAND_RNG_PSEUDO_PHILOX4_32_10,
     )
     Random.seed!(rng, seed)
     return (
@@ -69,6 +68,19 @@ function check_modelb_fixed_buffers(u, buffers)
     @assert size(buffers.links) == (size(u)..., 4) "buffers do not match u"
     @assert buffers.lattice == Val(size(u, 1)) "buffers do not match u"
     return nothing
+end
+
+function modelb_fixed_step_count(tspan, dt)
+    dt = Float32(dt)
+    dt > 0.0f0 || throw(ArgumentError("dt must be positive"))
+    duration = Float32(tspan[2] - tspan[1])
+    duration >= 0.0f0 || throw(ArgumentError("tspan must run forward"))
+    steps = round(Int, duration / dt)
+    tolerance = 8.0f0 * eps(Float32) * max(duration, 1.0f0)
+    abs(steps * dt - duration) <= tolerance || throw(ArgumentError(
+        "tspan must contain an integer number of fixed dt steps",
+    ))
+    return steps, dt
 end
 
 @inline function modelb_fixed_lattice(::Val{L}) where L
@@ -283,13 +295,7 @@ function modelB_2d_fixed!(
 
     @assert γ > 0.0f0
     @assert T >= 0.0f0
-    @assert dt > 0.0f0
-    duration = tspan[2] - tspan[1]
-    @assert duration >= 0.0f0
-    steps = round(Int, duration / dt)
-    tolerance = 8.0f0 * eps(Float32) * max(duration, 1.0f0)
-    valid_steps = abs(steps * dt - duration) <= tolerance
-    @assert valid_steps "tspan must contain an integer number of fixed steps"
+    steps, dt = modelb_fixed_step_count(tspan, dt)
 
     inv_gamma = 1.0f0 / γ
     two_kappa = 2.0f0 * κ
@@ -317,7 +323,7 @@ function modelB_2d_fixed(
     seed=rand(UInt64),
 )
     # Pass seed explicitly when the exact random trajectory must be reproducible.
-    u = CuArray(Float32.(u0))
+    u = CuArray{Float32}(u0)
     buffers = modelb_fixed_buffers(u; seed)
     modelB_2d_fixed!(u, buffers; γ, tspan, T, κ, λ, dt)
     CUDA.synchronize()

@@ -94,8 +94,7 @@ end
 Fixed-step SciML algorithm backed by the fused GPU SOSRA implementation.
 With the default `buffers=nothing`, each solve owns its buffers and is safe to
 run independently.  Passing `modelb_fixed_buffers(prob.u0)` avoids repeated GPU
-allocation, but that algorithm object must then be used serially on the same
-CUDA stream.
+allocation, but that algorithm object must not be shared by concurrent solves.
 """
 struct ModelBFixedSOSRA{B} <: MODEL_B_SCIML_BASE.AbstractSDEAlgorithm
     buffers::B
@@ -110,19 +109,6 @@ MODEL_B_SCIML_BASE.requires_additive_noise(::ModelBFixedSOSRA) = true
 MODEL_B_SCIML_BASE.allowscallback(::ModelBFixedSOSRA) = false
 MODEL_B_SCIML_BASE.alg_interpretation(::ModelBFixedSOSRA) =
     MODEL_B_SCIML_BASE.AlgorithmInterpretation.Ito
-
-function modelb_fixed_step_count(tspan, dt)
-    dt = Float32(dt)
-    dt > 0.0f0 || throw(ArgumentError("dt must be positive"))
-    duration = Float32(tspan[2] - tspan[1])
-    duration >= 0.0f0 || throw(ArgumentError("tspan must run forward"))
-    steps = round(Int, duration / dt)
-    tolerance = 8.0f0 * eps(Float32) * max(duration, 1.0f0)
-    abs(steps * dt - duration) <= tolerance || throw(ArgumentError(
-        "tspan must contain an integer number of fixed dt steps",
-    ))
-    return steps, dt
-end
 
 function MODEL_B_SCIML_BASE.__solve(
     prob::MODEL_B_SCIML_BASE.SDEProblem,

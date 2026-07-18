@@ -1,7 +1,0 @@
-mg0939
-aarch64
-5ade8ac779ab330e483e050e1246cc513a41e57942824a9c7893b3f9328f35d3  /work/gw97/w97000/project/DM/ModelB/h100_exploration_20260718/../ModelB.jl
-NVIDIA GH200 120GB, GPU-814bff6b-1545-0492-f188-314ef8f65806, 00000009:01:00.0, 900.00, 900.00, 900.00, 1980, 2619
-#Entity         POWER             POWINST           EPLMT             SMCLK        MMCLK        
-ID               W                 W                 W                                          
-GPU 0           85.272            85.340            700.000           345          2619         
