@@ -1,6 +1,6 @@
 using CUDA, Statistics, Test
 
-include(joinpath(@__DIR__, "..", "ModelB_fixed_sciml.jl"))
+include(joinpath(@__DIR__, "..", "solver", "ModelB_fixed_sciml.jl"))
 
 function reference_modelb_drift(u, two_kappa, m02, c3, inv_gamma)
     left = circshift(u, (1, 0, 0))
@@ -28,6 +28,24 @@ function reference_modelb_drift(u, two_kappa, m02, c3, inv_gamma)
         m02 .* laplacian_phi .+
         c3 .* laplacian_phi3
     )
+end
+
+function direct_checkpoints(prob, seed, dt, steps)
+    u = copy(prob.u0)
+    buffers = modelb_fixed_buffers(u; seed)
+    states = typeof(u)[copy(u)]
+    previous_step = 0
+    for step in steps
+        modelB_2d_fixed!(
+            u, buffers;
+            γ=prob.p.γ, T=prob.p.T, κ=prob.p.κ, λ=prob.p.λ,
+            tspan=(0.0f0, (step - previous_step) * dt), dt=dt,
+        )
+        push!(states, copy(u))
+        previous_step = step
+    end
+    CUDA.synchronize()
+    return states
 end
 
 CUDA.seed!(20260718)
@@ -69,6 +87,8 @@ final_mean = Array(mean(sol.u[end]; dims=(1, 2)))
     @test sol.u[end] == direct
     @test sol_reused.u[end] == direct
     @test sol_repeated.u[end] == sol_reused.u[end]
+    @test sol_reused.t == Float32[0.02f0]
+    @test length(sol_reused.u) == 1
     @test maximum(abs.(final_mean .- initial_mean)) < 2.0f-6
     @test all(isfinite, Array(sol.u[end]))
 
@@ -83,15 +103,71 @@ final_mean = Array(mean(sol.u[end]; dims=(1, 2)))
     @test_throws AssertionError solve(
         prob, ModelBFixedSOSRA(); save_everystep=true,
     )
-    @test_throws AssertionError solve(
-        prob, ModelBFixedSOSRA(); saveat=0.01f0,
-    )
     @test_throws MethodError solve(
         prob, ModelBFixedSOSRA(); callback=identity,
     )
 end
 
-@testset "fused noise and SOSRA stage 1" begin
+@testset "ModelBFixedSOSRA saveat" begin
+    dt = 0.002f0
+    saved = solve(
+        prob, ModelBFixedSOSRA();
+        dt, saveat=0.004f0, save_start=true, seed,
+    )
+    expected_times = Float32[0.0f0, 0.004f0, 0.008f0,
+                             0.012f0, 0.016f0, 0.02f0]
+    expected_states = direct_checkpoints(prob, seed, dt, [2, 4, 6, 8, 10])
+
+    @test saved.t == expected_times
+    @test length(saved.u) == length(expected_states)
+    @test MODEL_B_SCIML_BASE.successful_retcode(saved)
+    @test saved.stats.nf == 30
+    @test saved.stats.naccept == 10
+    for i in eachindex(saved.u)
+        @test saved.u[i] == expected_states[i]
+        @test all(isfinite, saved.u[i])
+        mean_change = maximum(abs, Array(
+            mean(saved.u[i]; dims=(1, 2)) - mean(prob.u0; dims=(1, 2)),
+        ))
+        @test mean_change < 2.0f-6
+        for j in 1:(i - 1)
+            @test saved.u[i] !== saved.u[j]
+        end
+    end
+
+    without_start = solve(
+        prob, ModelBFixedSOSRA(); dt, saveat=0.004f0, seed,
+    )
+    @test without_start.t == expected_times[2:end]
+    @test without_start.u[end] == direct
+
+    selected = solve(
+        prob, ModelBFixedSOSRA();
+        dt, saveat=Float32[0.01f0, 0.004f0, 0.02f0, 0.004f0], seed,
+    )
+    @test selected.t == Float32[0.004f0, 0.01f0, 0.02f0]
+    @test selected.u[end] == direct
+
+    limited = solve(
+        prob, ModelBFixedSOSRA();
+        dt, saveat=0.006f0, save_start=true, maxiters=7, seed,
+    )
+    limited_states = direct_checkpoints(prob, seed, dt, [3, 6, 7])
+    @test limited.t == Float32[0.0f0, 0.006f0, 0.012f0, 0.014f0]
+    @test limited.retcode == MODEL_B_SCIML_BASE.ReturnCode.MaxIters
+    @test limited.stats.nf == 21
+    @test limited.stats.naccept == 7
+    @test all(limited.u[i] == limited_states[i] for i in eachindex(limited.u))
+
+    @test_throws ArgumentError solve(
+        prob, ModelBFixedSOSRA(); dt, saveat=0.003f0, seed,
+    )
+    @test_throws ArgumentError solve(
+        prob, ModelBFixedSOSRA(); dt, saveat=0.0f0, seed,
+    )
+end
+
+@testset "deterministic fused SOSRA stages" begin
     L = 32
     u_values = reshape(
         cos.(0.011f0 .* Float32.(1:(2 * L * L))),
@@ -104,6 +180,10 @@ end
         size(buffers.links),
     )
     copyto!(buffers.links, values)
+    u_initial = copy(u)
+
+    @test !hasproperty(buffers, :dW)
+    @test !hasproperty(buffers, :k2)
 
     dt = 0.002f0
     noise_amplitude = sqrt(2.0f0)
@@ -113,13 +193,12 @@ end
     m02 = 2.0f0 * (1.0f0 - 2.0f0 * λ) - 8.0f0 * κ
     c3 = 4.0f0 * λ
     n = Int32(length(u))
-    @cuda threads=768 blocks=cld(length(u), 768) modelb_fixed_noise_stage1_kernel!(
-        buffers.h01, buffers.k1, buffers.dW, buffers.q,
+    @cuda threads=768 blocks=cld(length(u), 768) modelb_fixed_stage1_kernel!(
+        buffers.h01, buffers.h02, buffers.k1, buffers.q,
         u, buffers.links, sqrt(dt), dt,
         two_kappa, m02, c3, 1.0f0, noise_amplitude,
         buffers.lattice, n,
     )
-    CUDA.synchronize()
 
     wx = @view buffers.links[:, :, :, 1]
     wy = @view buffers.links[:, :, :, 2]
@@ -137,16 +216,66 @@ end
         reference_dW .+ SOSRA_INV_SQRT3 .* reference_dZ
     )
     reference_k1 = reference_modelb_drift(
-        u, two_kappa, m02, c3, 1.0f0,
+        u_initial, two_kappa, m02, c3, 1.0f0,
     )
-    reference_h01 = u .+ dt * SOSRA_A21 .* reference_k1 .+
+    reference_h01 = u_initial .+ dt * SOSRA_A21 .* reference_k1 .+
                     SOSRA_B21 .* reference_q
+    reference_partial_u =
+        u_initial .+ dt * SOSRA_ALPHA1 .* reference_k1 .+
+        noise_amplitude .* reference_dW
     CUDA.synchronize()
 
-    @test buffers.dW == reference_dW
     @test buffers.q == reference_q
     @test buffers.k1 == reference_k1
     @test buffers.h01 == reference_h01
+    @test buffers.h02 == reference_partial_u
+
+    reference_k2 = reference_modelb_drift(
+        reference_h01, two_kappa, m02, c3, 1.0f0,
+    )
+    reference_u_after_stage2 =
+        reference_partial_u .+ dt * SOSRA_ALPHA2 .* reference_k2
+    reference_stage3_input =
+        u_initial .+ dt .* (
+            SOSRA_A31 .* reference_k1 .+ SOSRA_A32 .* reference_k2
+        ) .+ SOSRA_B31_B32 .* reference_q
+
+    @cuda threads=1024 blocks=cld(length(u), 1024) modelb_fixed_stage2_kernel!(
+        u, buffers.h02, buffers.h01, buffers.k1, buffers.q, dt,
+        two_kappa, m02, c3, 1.0f0,
+        buffers.lattice, n,
+    )
+    CUDA.synchronize()
+
+    @test u == reference_u_after_stage2
+    @test buffers.h02 == reference_stage3_input
+
+    reference_k3 = reference_modelb_drift(
+        reference_stage3_input, two_kappa, m02, c3, 1.0f0,
+    )
+    reference_final =
+        reference_u_after_stage2 .+ dt * SOSRA_ALPHA3 .* reference_k3
+    old_sum_order =
+        u_initial .+ dt .* (
+            SOSRA_ALPHA1 .* reference_k1 .+
+            SOSRA_ALPHA2 .* reference_k2 .+
+            SOSRA_ALPHA3 .* reference_k3
+        ) .+ noise_amplitude .* reference_dW
+
+    @cuda threads=1024 blocks=cld(length(u), 1024) modelb_fixed_stage3_kernel!(
+        u, buffers.h02, dt,
+        two_kappa, m02, c3, 1.0f0,
+        buffers.lattice, n,
+    )
+    CUDA.synchronize()
+
+    @test u == reference_final
+    old_order_tolerance = 16.0f0 * eps(Float32) *
+                          max(1.0f0, maximum(abs, old_sum_order))
+    @test maximum(abs, u .- old_sum_order) <= old_order_tolerance
+    @test maximum(abs, Array(
+        mean(u; dims=(1, 2)) - mean(u_initial; dims=(1, 2)),
+    )) < 2.0f-6
 end
 
 @testset "power-of-two lattice sizes" begin

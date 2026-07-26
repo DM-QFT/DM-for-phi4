@@ -1,6 +1,6 @@
 using CUDA, Printf, Statistics
 
-include(joinpath(@__DIR__, "..", "ModelB_fixed_sciml.jl"))
+include(joinpath(@__DIR__, "..", "solver", "ModelB_fixed_sciml.jl"))
 
 CUDA.seed!(20260718)
 u0 = CUDA.randn(Float32, 128, 128, 1024)

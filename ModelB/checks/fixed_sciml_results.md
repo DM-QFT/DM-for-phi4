@@ -9,24 +9,50 @@ SciMLBase 3.35.1, and StochasticDiffEq 7.1.1.
 julia --startup-file=no --project=@. checks/test_fixed_sciml.jl
 ```
 
-All 38 tests pass.  They cover `L=32,64,128`; at every size the specialized drift
-is elementwise identical to the Cartesian-index reference drift.  The fused
-noise/stage-1 kernel also produces `dW`, `q`, `k1`, and `h01` elementwise
-identical to independent periodic-divergence and drift calculations.  With the
-same Philox seed, both the allocation-owning and
-buffer-reusing SciML paths are elementwise identical to `modelB_2d_fixed!`.
+The fixed-solver test suite covers `L=32,64,128`; at every size the specialized
+drift is elementwise identical to the Cartesian-index reference drift.  With
+fixed link values, independent periodic-divergence and drift calculations verify all
+three fused stages elementwise: `q`, `k1`, `h01`, the partial final state in
+`h02`, both stage-2 outputs, and the final state.  The tests also confirm that
+the buffers no longer contain `dW` or `k2` arrays.  With the same Philox seed,
+both the allocation-owning and buffer-reusing SciML paths are elementwise
+identical to `modelB_2d_fixed!`.
 Repeated solves with the same seed are also elementwise identical.  The maximum
 ensemble mean-field change in the four-ensemble test is below `2e-6`.
 
+The wrapper accepts a positive scalar `saveat` interval or a collection of
+times aligned with `dt`.  The wrapper checks verify every saved state
+against the same-seed direct trajectory, independent snapshot storage, scalar
+and unsorted/repeated vector schedules, `maxiters` endpoints, conserved means,
+and rejection of non-aligned save times.
+
 The same backend was also tested for stationarity on 512 evenly spaced L=128
 critical HMC configurations without subtracting each configuration's mean.
-They were evolved to `t=5` with `dt=0.002` for two independent Philox
+They were evolved to `t=5` with `dt=0.002` for four independent Philox
 repetitions at `kappa=0.2705`, `lambda=0.022`, and `gamma=T=1`.  The relative
 drifts (paired z scores) were
-`+0.000306%` (`0.004`) for the action, `-0.017045%` (`-0.525`) for `phi2`,
-`-0.000759%` (`-0.011`) for `phi4`, and `-0.021997%` (`-0.597`) for the
-nearest-neighbor observable.  None is statistically distinguishable from
-zero.  The largest magnetization-density change was `5.97e-8`.
+`+0.006534%` (`0.112`) for the action, `-0.013732%` (`-0.522`) for `phi2`,
+`-0.004993%` (`-0.086`) for `phi4`, `-0.020501%` (`-0.676`) for the
+nearest-neighbor observable, and `+0.014413%` (`0.247`) for
+`mean(abs2(dS/dphi))`.  The paired z scores for the lowest nonzero and
+quarter-lattice momentum structure factors were `1.450` and `0.212`.
+None is statistically distinguishable from zero.  The largest
+magnetization-density change was `9.11e-8`.
+
+The production `dt=0.002` HMC endpoint files were generated without an active
+mean projection.  A Float64 CPU reduction over all 10,240 matched trajectories
+at `kappa=0.28` gives the following per-trajectory magnetization-density drift:
+
+| Time | mean abs drift | maximum abs drift |
+|---:|---:|---:|
+| 1 | `1.186e-8` | `5.506e-8` |
+| 10 | `3.670e-8` | `1.757e-7` |
+| 100 | `1.190e-7` | `6.253e-7` |
+
+At `t=100`, the 99th and 99.9th percentiles are `3.936e-7` and `4.980e-7`,
+and the signed ensemble average is `1.543e-10`.  The drift therefore behaves
+like unbiased Float32 roundoff and remains negligible on the field scale.  The
+fixed solver does not apply a separate zero-mode correction.
 
 For 33,554,432 Philox normal samples, the measured mean magnitude was below
 `4.4e-4`, variance was in `[0.9992, 1.0008]`, and cross-component correlation
@@ -39,23 +65,55 @@ julia --startup-file=no --project=@. checks/benchmark_fixed_sciml.jl
 ```
 
 Sixteen paired wall-clock measurements alternated direct/SciML execution order.
-Both sides include the initial-state copy, seed reset, reused 640 MiB buffers,
+Both sides include the initial-state copy, seed reset, reused 512 MiB buffers,
 the full GPU solve, and synchronization.
 
 | Measurement | Direct fixed | SciML + reused buffers |
 |---|---:|---:|
-| Median wall time | 0.606200 s | 0.606036 s |
-| Median paired ratio (SciML/direct) | | 0.999148 |
-| Paired-ratio IQR | | 0.998666--0.999740 |
+| Median wall time | 0.574137 s | 0.574239 s |
+| Median paired ratio (SciML/direct) | | 1.000215 |
+| Paired-ratio IQR | | 0.999032--1.000731 |
 
 All sixteen final arrays were elementwise identical.  The difference is inside
 normal run-to-run variation: the SciML interface and direct fixed interface have
 the same measured hot performance.
 
 The default `ModelBFixedSOSRA()` path owns fresh buffers.  Its first call took
-0.732215 s and its subsequent median was 0.607603 s.  Reuse is therefore
+0.705292 s and its subsequent median was 0.575291 s.  Reuse is therefore
 recommended for repeated large solves even though CUDA's memory pool makes the
 hot allocation cost small.
+
+For `tspan=(0,2)` and `saveat=0.5`, four L=128, 1024-ensemble CuArray snapshots
+were retained.  Eight alternated pairs measured 0.574311 s for final-only output
+and 0.574432 s with intermediate saving, a paired ratio of 1.000267.  Every
+final state was elementwise identical.  The copies therefore add no measurable
+compute overhead at this interval; their material cost is GPU memory.  Four
+snapshots occupy 256 MiB, 192 MiB more than final-only output.
+
+## Partial final-state accumulation
+
+Stage 1 now stores
+`u + dt*alpha1*k1 + sigma*dW` temporarily in `h02`.  Stage 2 evaluates `k2` in a
+register, adds its final-state contribution into `u`, then overwrites `h02` with
+the actual stage-3 input.  Stage 3 only reads `u` and `h02` and adds the `k3`
+contribution.  Stage 1 deliberately does not modify `u`: its stencil reads
+neighboring values across blocks, so changing `u` before the kernel ends would
+introduce a race.
+
+This removes the global `dW` and `k2` arrays.  At L=128 with 1024 ensembles the
+buffers fall from 640 MiB to 512 MiB.  Before changing the production file, 12
+alternated pairs measured the old path at 0.605480 s and the independent
+candidate at 0.575713 s, a paired ratio of 0.950820 (4.92% faster).  After the
+change, the production code and the still-independent candidate were
+elementwise identical after 1, 10, and 1000 steps; their 12-pair timing ratio
+was 0.999369.
+
+The new Float32 accumulation order is not bitwise identical to the old final
+sum.  Against the old implementation with the same random stream, the maximum
+difference after 1000 steps was `3.70e-6`, RMS difference was `4.77e-7`, and
+the largest mean-field change was `3.54e-8`.  The deterministic stage tests and
+the HMC stationarity test above independently check that this is rounding from
+an algebraically equivalent SOSRA update rather than a changed method.
 
 The variable-`L` implementation stores `Val(L)` in its buffers so each
 power-of-two lattice compiles to constant shifts and masks.  It also forms the
@@ -71,12 +129,12 @@ With 1024 ensembles and 1000 steps, five hot solver-only runs gave:
 
 | L | Median solve time | Time per step |
 |---:|---:|---:|
-| 32 | 0.044770 s | 0.044770 ms |
-| 64 | 0.167411 s | 0.167411 ms |
-| 128 | 0.604523 s | 0.604523 ms |
+| 32 | 0.043308 s | 0.043308 ms |
+| 64 | 0.157446 s | 0.157446 ms |
+| 128 | 0.574149 s | 0.574149 ms |
 
 All three final states were finite, and the largest ensemble mean-field change
-was below `1e-7`.
+was below `1.6e-7`.
 
 ## Scalar-return drift versus in-place drift
 
@@ -107,29 +165,21 @@ The following hot-path candidates were measured and rejected:
 - Passing stage 1's already-computed geometry into the drift kept the same 40
   registers and had a paired ratio of 1.000; the compiler already removes the
   apparent duplicate scalar indexing work.
-- Reusing one array for `q` and `k2` is numerically valid and saves 64 MiB, but
-  the store order is unexpectedly fragile.  Overwriting `q` before writing
-  `h02` made stage 2 take 1.059 ms instead of 0.152 ms because it introduced a
-  strong same-address load/store ordering dependency before the old `q` value's
-  final consumer.  Moving that store to the end restored 0.150 ms and gave a
-  full-solver paired ratio of 0.992.
-  Despite that small gain, the production code keeps separate `q` and `k2`
-  arrays because their mathematical roles and lifetimes remain explicit.
-- A full thread/block sweep retained 768 threads, 264 blocks for the 40-register
-  fused stage 1 and 1024 threads, 264 blocks for stages 2 and 3.  Alternatives
-  were either slower or within sub-percent timing noise.
-- Philox dynamic ordering reduced the current complete solve from 0.6060 s to
-  0.5930 s (2.1%), but its seed-to-array ordering may change across GPU models
-  and cuRAND releases.  It remains an opt-in experiment rather than the
-  reproducible default until the HMC/statistical validation is repeated for
-  that stream.
+- Reusing `q` itself as `k2` was numerically valid but introduced a fragile
+  same-address dependency.  The adopted scheme instead keeps `q`, holds `k2`
+  only in a register, and uses `h02` only after its previous value has been read.
+- A fresh thread/block sweep retained 768 threads and a 264-block cap for the
+  40-register fused stage 1, and 1024 threads with the same cap for the two
+  32-register stages.  Alternative thread counts were 0.4--13.7% slower and
+  alternative common block caps were 9.5--18.6% slower in the complete solve.
 
 ## Supported scope
 
 - Float32, `(L, L, Nensemble)` CuArray state, with power-of-two `L >= 4`
 - fixed positive `dt` and forward `tspan` containing an integer number of steps
-- final-state output, with optional initial-state output
+- final endpoint plus optional `dt`-aligned intermediate CuArray snapshots
+- optional initial-state output with `save_start=true`
 - optional explicit `seed`
 
-Adaptive stepping, callbacks, dense/intermediate output, non-power-of-two
-lattices, and generic `SDEProblem` functions/noise are intentionally rejected.
+Adaptive stepping, callbacks, dense output, non-power-of-two lattices, and
+generic `SDEProblem` functions/noise are intentionally rejected.

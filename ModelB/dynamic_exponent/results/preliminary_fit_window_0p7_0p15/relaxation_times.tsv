@@ -1,0 +1,5 @@
+L	nensemble	sample_dt	tau	tau_std	tau_lo	tau_hi	fit_t_min	fit_t_max	source
+8	512	0.1	4.642058652701026	0.10586040697637883	4.535499555548283	4.748061660838715	1.6	9.3	/work/gw97/w97000/project/DM/ModelB/dynamic_exponent/results/preliminary_modes_L8.jld2
+16	256	0.5	61.673494309534014	2.5742399071068958	59.12372432644921	64.25826589415648	19.5	131.0	/work/gw97/w97000/project/DM/ModelB/dynamic_exponent/results/preliminary_modes_L16.jld2
+32	128	2.0	909.438129759058	76.83313348238272	830.0160135221248	983.2534071519585	266.0	1974.0	/work/gw97/w97000/project/DM/ModelB/dynamic_exponent/results/preliminary_modes_L32.jld2
+64	64	10.0	11933.981130505046	1414.3092397215746	10475.665496878302	13284.87591847737	3060.0	25230.0	/work/gw97/w97000/project/DM/ModelB/dynamic_exponent/results/preliminary_modes_L64.jld2

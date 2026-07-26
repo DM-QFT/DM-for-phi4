@@ -1,4 +1,4 @@
-using CUDA, DiffEqNoiseProcess, StochasticDiffEq
+using CUDA, DiffEqNoiseProcess, Random, StochasticDiffEq
 
 @inline limitbound(a, n) =
     if a == n + 1
@@ -103,25 +103,30 @@ function launch_conserved_noise!(out, xi_x, xi_y)
 end
 
 function modelb_noise_dist!(rand_vec, W, dt, u, p, t, rng)
-    noise_work, xi_x, xi_y = p
-    DiffEqNoiseProcess.wiener_randn!(CUDA.default_rng(), xi_x)
-    DiffEqNoiseProcess.wiener_randn!(CUDA.default_rng(), xi_y)
+    noise_work, xi_x, xi_y, gpu_rng = p
+    # DiffEqNoiseProcess's generic GPU fallback deliberately ignores `rng`.
+    # The problem therefore owns an explicitly seeded Philox generator in p.
+    Random.randn!(gpu_rng, xi_x)
+    Random.randn!(gpu_rng, xi_y)
     CUDA.@sync launch_conserved_noise!(noise_work, xi_x, xi_y)
     CUDA.@sync @. rand_vec = sqrt(abs(dt)) * noise_work
     return nothing
 end
 
 function modelb_noise_bridge!(rand_vec, W, W0, Wh, q, h, u, p, t, rng)
-    noise_work, xi_x, xi_y = p
-    DiffEqNoiseProcess.wiener_randn!(CUDA.default_rng(), xi_x)
-    DiffEqNoiseProcess.wiener_randn!(CUDA.default_rng(), xi_y)
+    noise_work, xi_x, xi_y, gpu_rng = p
+    Random.randn!(gpu_rng, xi_x)
+    Random.randn!(gpu_rng, xi_y)
     CUDA.@sync launch_conserved_noise!(noise_work, xi_x, xi_y)
     CUDA.@sync @. rand_vec = sqrt((1 - q) * q * abs(h)) * noise_work + q * Wh
     return nothing
 end
 
-function modelb_noise_process(t0, template)
+function modelb_noise_process(t0, template; seed=rand(UInt64))
     # SOSRA requires both the Wiener increment W and its auxiliary integral Z.
+    # Keep a copyable CPU RNG for NoiseProcess's own bookkeeping.  Actual
+    # CuArray draws use the problem-owned Philox generator in p.
+    rng = Random.Xoshiro(UInt64(seed))
     return NoiseProcess{true}(
         t0,
         zero(template),
@@ -129,6 +134,7 @@ function modelb_noise_process(t0, template)
         modelb_noise_dist!,
         modelb_noise_bridge!;
         save_everystep=false,
+        rng,
     )
 end
 
@@ -140,17 +146,35 @@ function modelB_2d_SDE_prob(
     κ=0.2705f0,
     λ=0.022f0,
     saveat=1.0f0,
+    dt=0.005f0,
+    seed=rand(UInt64),
 )
-    γ, T, κ, λ = Float32.((γ, T, κ, λ))
+    γ, T, κ, λ, dt = Float32.((γ, T, κ, λ, dt))
     tspan = Float32.(tspan)
+    saveat = Float32(saveat)
+    seed = UInt64(seed)
     u = CuArray(Float32.(u0))
-    @assert ndims(u) == 3 && size(u, 1) == size(u, 2) "u0 must have shape (L, L, Nensemble)"
+    ndims(u) == 3 && size(u, 1) == size(u, 2) && size(u, 1) >= 4 &&
+        size(u, 3) > 0 || throw(ArgumentError(
+            "u0 must have shape (L, L, Nensemble), with L >= 4 and Nensemble > 0",
+        ))
+    all(isfinite, u) || throw(ArgumentError("u0 must be finite"))
+    all(isfinite, (γ, T, κ, λ, dt, tspan..., saveat)) ||
+        throw(ArgumentError("all physical/time parameters must be finite"))
+    γ > 0.0f0 || throw(ArgumentError("γ must be positive"))
+    T >= 0.0f0 || throw(ArgumentError("T must be nonnegative"))
+    tspan[2] >= tspan[1] || throw(ArgumentError("tspan must run forward"))
+    saveat > 0.0f0 || throw(ArgumentError("saveat must be positive"))
 
     inv_gamma = 1.0f0 / γ
     two_kappa = 2.0f0 * κ
     m02 = 2.0f0 * (1.0f0 - 2.0f0 * λ) - 8.0f0 * κ
     c3 = 4.0f0 * λ
-    workspace = (similar(u), similar(u), similar(u))
+    gpu_rng = CUDA.cuRAND.LibraryRNG(
+        CUDA.cuRAND.CURAND_RNG_PSEUDO_PHILOX4_32_10,
+    )
+    Random.seed!(gpu_rng, seed)
+    workspace = (similar(u), similar(u), similar(u), gpu_rng)
 
     function drift!(du, u, p, t)
         CUDA.@sync launch_modelb_drift!(du, u, two_kappa, m02, c3, inv_gamma)
@@ -161,14 +185,16 @@ function modelB_2d_SDE_prob(
         fill!(du, noise_amplitude)
     end
 
-    noise = modelb_noise_process(tspan[1], u)
+    dt > 0.0f0 || throw(ArgumentError("dt must be positive"))
+    noise = modelb_noise_process(tspan[1], u; seed)
     problem = SDEProblem(drift!, diffusion!, u, tspan, workspace; noise=noise)
     alg = SOSRA()
     solve(
         problem, alg;
         adaptive=false,
-        dt=0.005f0,
-        saveat=Float32(saveat),
+        dt,
+        saveat,
         save_everystep=false,
+        seed,
     )
 end

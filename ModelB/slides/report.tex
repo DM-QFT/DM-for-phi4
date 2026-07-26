@@ -1,0 +1,140 @@
+\documentclass[10pt,UTF8]{beamer}
+
+\usetheme{metropolis}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\graphicspath{{./figures/}}
+
+\title{Generative Modeling of\\[3pt] Real-Time Stochastic Dynamics}
+\date{\today}
+\author{Yang-yang Tan}
+
+\definecolor{burgundy}{RGB}{127,0,32}
+\setbeamercolor{alerted text}{fg=burgundy}
+\setbeamercolor{block title}{use=normal text,fg=normal text.fg,bg=normal text.bg!80!fg}
+
+\begin{document}
+\maketitle
+
+\begin{frame}{Dynamic critical behavior}
+\textbf{Hohenberg--Halperin viewpoint}
+\begin{align*}
+  \partial_t\phi_a(\mathbf x,t)
+  &=-\sum_b\mathcal K_{ab}[\phi]\,
+  \frac{\delta F[\phi]}{\delta\phi_b(\mathbf x,t)}
+  +\zeta_a(\mathbf x,t),\\
+  \left\langle\zeta_a(\mathbf x,t)\zeta_b(\mathbf x',t')\right\rangle
+  &=2T\mathcal K_{ab}\,
+  \delta^{(d)}(\mathbf x-\mathbf x')\delta(t-t').
+\end{align*}
+
+\begin{block}{Model B with a continuum \(\phi^4\) free energy}
+\begin{align*}
+  F[\phi]
+  &=\int d^2x\left[
+    \frac{1}{2}(\boldsymbol\nabla\phi)^2
+    +\frac{r}{2}\phi^2+\frac{u}{4}\phi^4\right],\\
+  \mathcal K&=-\Gamma\nabla^2,
+  \qquad
+  \partial_t\phi
+  =\Gamma\nabla^2\frac{\delta F}{\delta\phi}+\zeta,\\
+  M(t)&=\frac{1}{|\Omega|}\int_\Omega\phi(\mathbf x,t)\,d^2x=M(0).
+\end{align*}
+\end{block}
+\end{frame}
+
+\begin{frame}{Learning a finite-time transition}
+\begin{block}{Physical training pairs}
+\begin{equation*}
+  \phi\equiv\phi_t,
+  \qquad
+  \Delta\phi\equiv\phi_{t+\tau}-\phi_t,
+  \qquad
+  \tau=10 .
+\end{equation*}
+\end{block}
+
+\begin{block}{Learned conditional transition}
+\begin{equation*}
+  p_\theta(\Delta\phi\mid\phi)
+  \simeq
+  p_\tau(\phi_{t+\tau}-\phi_t\mid\phi_t).
+\end{equation*}
+The condition \(\phi\) remains clean; the diffusion model generates only
+\(\Delta\phi\).
+\end{block}
+
+\begin{block}{Trajectory generation}
+\begin{align*}
+  \Delta\phi_n\sim p_\theta(\Delta\phi\mid\phi_{n\tau}),
+  &\qquad
+  \phi_{(n+1)\tau}=\phi_{n\tau}+\Delta\phi_n,\\
+  n=0,\ldots,19
+  &\qquad\Longrightarrow\qquad
+  t_{\max}=20\tau=200 .
+\end{align*}
+\end{block}
+\end{frame}
+
+\begin{frame}{Spatial evolution from a Gaussian initial field}
+\centering
+\vfill
+\makebox[\textwidth][c]{%
+  \includegraphics[width=1.12\textwidth]{gaussian_spatial_evolution.pdf}}
+\vfill
+{\scriptsize
+The two rows start from the same configuration and are evolved with independent
+stochastic noise.}
+\vfill
+\end{frame}
+
+\begin{frame}{Equilibrium HMC initial fields}
+\centering
+\includegraphics[width=\textwidth,height=0.73\textheight,keepaspectratio]
+  {hmc_observables.pdf}
+
+\vspace{-0.1cm}
+{\scriptsize
+At \(t=200\): \(\phi_2\) \(+1.84\%\), \(\phi_4\) \(+2.88\%\), centered
+variance \(-0.78\%\).  The direct dynamics stays stationary, while the DM
+develops a smooth accumulated bias.}
+\end{frame}
+
+\begin{frame}{Nonequilibrium Gaussian initial fields}
+\centering
+\includegraphics[width=\textwidth,height=0.73\textheight,keepaspectratio]
+  {gaussian_observables.pdf}
+
+\vspace{-0.1cm}
+{\scriptsize
+The DM captures the initial decrease and subsequent growth of fluctuations.
+At \(t=200\): \(\phi_2\) \(+3.88\%\), \(\phi_4\) \(+7.17\%\), centered
+variance \(+3.81\%\).}
+\end{frame}
+
+\begin{frame}{Time correlations from HMC initial fields}
+\centering
+\includegraphics[width=\textwidth,height=0.73\textheight,keepaspectratio]
+  {hmc_lag_average.pdf}
+
+\vspace{-0.05cm}
+{\scriptsize
+The relaxation hierarchy is reproduced.  The main systematic difference is
+in the slowest mode: at lag \(10\), \(\rho_1=0.8093(11)\) for DM and
+\(0.7825(12)\) for Model B.}
+\end{frame}
+
+\begin{frame}{Time correlations from Gaussian initial fields}
+\centering
+\includegraphics[width=\textwidth,height=0.73\textheight,keepaspectratio]
+  {gaussian_lag_average.pdf}
+
+\vspace{-0.05cm}
+{\scriptsize
+The ordering of relaxation scales remains correct, but the DM retains excess
+long-time memory in selected low modes.}
+\end{frame}
+
+\end{document}

@@ -218,7 +218,7 @@ class ScoreNetND(nn.Module):
 
 
 class ResnetBlockND(nn.Module):
-    """ResNet block with additive time conditioning."""
+    """Two-convolution block with additive time conditioning and no skip."""
 
     def __init__(self, in_ch: int, out_ch: int, embed_dim: int,
                  spatial_dims: int, periodic: bool = True):
@@ -235,9 +235,6 @@ class ResnetBlockND(nn.Module):
         self.conv2 = conv(out_ch, out_ch, 3, padding=1,
                           padding_mode=pad_mode, bias=False)
         self.norm2 = nn.GroupNorm(max(1, out_ch // 8), out_ch)
-
-        if in_ch != out_ch:
-            self.skip_conv = conv(in_ch, out_ch, 1, bias=False)
 
         self.act = nn.SiLU()
 

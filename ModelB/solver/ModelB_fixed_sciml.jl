@@ -1,6 +1,6 @@
 using CUDA, Random, StochasticDiffEq
 
-include("ModelB_fixed.jl")
+include(joinpath(@__DIR__, "ModelB_fixed.jl"))
 
 const MODEL_B_SCIML_BASE = StochasticDiffEq.SciMLBase
 
@@ -13,6 +13,9 @@ struct ModelBFixedParameters
 
     function ModelBFixedParameters(γ, T, κ, λ)
         γ, T, κ, λ = Float32.((γ, T, κ, λ))
+        all(isfinite, (γ, T, κ, λ)) || throw(ArgumentError(
+            "all Model B parameters must be finite",
+        ))
         γ > 0.0f0 || throw(ArgumentError("γ must be positive"))
         T >= 0.0f0 || throw(ArgumentError("T must be nonnegative"))
         return new(γ, T, κ, λ)
@@ -95,6 +98,9 @@ Fixed-step SciML algorithm backed by the fused GPU SOSRA implementation.
 With the default `buffers=nothing`, each solve owns its buffers and is safe to
 run independently.  Passing `modelb_fixed_buffers(prob.u0)` avoids repeated GPU
 allocation, but that algorithm object must not be shared by concurrent solves.
+`saveat` may be a positive interval or a collection of times aligned with `dt`;
+saved states remain CuArrays.  The initial state is included only with
+`save_start=true`, and the reached endpoint is always included.
 """
 struct ModelBFixedSOSRA{B} <: MODEL_B_SCIML_BASE.AbstractSDEAlgorithm
     buffers::B
@@ -109,6 +115,49 @@ MODEL_B_SCIML_BASE.requires_additive_noise(::ModelBFixedSOSRA) = true
 MODEL_B_SCIML_BASE.allowscallback(::ModelBFixedSOSRA) = false
 MODEL_B_SCIML_BASE.alg_interpretation(::ModelBFixedSOSRA) =
     MODEL_B_SCIML_BASE.AlgorithmInterpretation.Ito
+
+function modelb_fixed_save_schedule(tspan, dt, saveat, run_steps, total_steps)
+    schedule = Pair{Int, Float32}[]
+    if saveat isa Number
+        interval = Float32(saveat)
+        isfinite(interval) && interval > 0.0f0 || throw(ArgumentError(
+            "saveat must be positive",
+        ))
+        interval_steps, _ = modelb_fixed_step_count(
+            (0.0f0, interval), dt,
+        )
+        interval_steps > 0 || throw(ArgumentError(
+            "saveat must be at least one dt",
+        ))
+        for (index, step) in enumerate(interval_steps:interval_steps:run_steps)
+            push!(schedule, step => tspan[1] + index * interval)
+        end
+    elseif saveat != ()
+        t0 = tspan[1]
+        for time in saveat
+            saved_time = Float32(time)
+            relative_time = saved_time - t0
+            isfinite(relative_time) && relative_time >= 0.0f0 ||
+                throw(ArgumentError("saveat times must lie inside tspan"))
+            step, _ = modelb_fixed_step_count(
+                (0.0f0, relative_time), dt,
+            )
+            step <= total_steps ||
+                throw(ArgumentError("saveat times must lie inside tspan"))
+            0 < step <= run_steps && push!(schedule, step => saved_time)
+        end
+        sort!(schedule; by=first)
+        unique!(first, schedule)
+    end
+    final_time = run_steps == total_steps ?
+        tspan[2] : tspan[1] + run_steps * dt
+    if isempty(schedule) || first(schedule[end]) != run_steps
+        push!(schedule, run_steps => final_time)
+    else
+        schedule[end] = run_steps => final_time
+    end
+    return schedule
+end
 
 function MODEL_B_SCIML_BASE.__solve(
     prob::MODEL_B_SCIML_BASE.SDEProblem,
@@ -128,13 +177,13 @@ function MODEL_B_SCIML_BASE.__solve(
     @assert adaptive === false
     @assert dense === false
     @assert save_everystep === false
-    if saveat != ()
-        @assert saveat isa Number && Float32(saveat) == prob.tspan[2]
-    end
 
     total_steps, dt = modelb_fixed_step_count(prob.tspan, dt)
     maxiters >= 0 || throw(ArgumentError("maxiters must be nonnegative"))
     run_steps = min(total_steps, Int(maxiters))
+    save_schedule = modelb_fixed_save_schedule(
+        prob.tspan, dt, saveat, run_steps, total_steps,
+    )
     seed = UInt64(seed)
 
     u = copy(prob.u0)
@@ -149,23 +198,28 @@ function MODEL_B_SCIML_BASE.__solve(
 
     p = prob.p
     t0 = prob.tspan[1]
-    relative_end = run_steps * dt
-    t = run_steps == total_steps ? prob.tspan[2] : t0 + relative_end
-    modelB_2d_fixed!(
-        u, buffers;
-        γ=p.γ, T=p.T, κ=p.κ, λ=p.λ,
-        tspan=(0.0f0, relative_end), dt=dt,
-    )
-    CUDA.synchronize()
 
     ts = eltype(prob.tspan)[]
     us = typeof(u)[]
-    if save_start && t != t0
+    sizehint!(ts, length(save_schedule) + Int(save_start && run_steps > 0))
+    sizehint!(us, length(save_schedule) + Int(save_start && run_steps > 0))
+    if save_start && run_steps > 0
         push!(ts, t0)
         push!(us, copy(prob.u0))
     end
-    push!(ts, t)
-    push!(us, u)
+
+    previous_step = 0
+    for (step, saved_time) in save_schedule
+        modelB_2d_fixed!(
+            u, buffers;
+            γ=p.γ, T=p.T, κ=p.κ, λ=p.λ,
+            tspan=(0.0f0, (step - previous_step) * dt), dt=dt,
+        )
+        push!(ts, saved_time)
+        push!(us, step == run_steps ? u : copy(u))
+        previous_step = step
+    end
+    CUDA.synchronize()
 
     stats = MODEL_B_SCIML_BASE.DEStats(0)
     stats.nf = 3 * run_steps

@@ -15,7 +15,6 @@ const SOSRA_A32 = 4.1609144f0
 const SOSRA_B21 = 1.3371633f0
 const SOSRA_B31_B32 = 1.442371f0 + 1.8632741f0
 const SOSRA_INV_SQRT3 = inv(sqrt(3.0f0))
-
 @inline fixed_cube(x) = x * x * x
 
 function check_modelb_fixed_state(u)
@@ -44,8 +43,6 @@ function modelb_fixed_buffers(u; seed=rand(UInt64))
         h01=similar(u),
         h02=similar(u),
         k1=similar(u),
-        k2=similar(u),
-        dW=similar(u),
         q=similar(u),
         links=similar(u, Float32, (size(u)..., 4)),
         rng=rng,
@@ -60,8 +57,7 @@ end
 
 function check_modelb_fixed_buffers(u, buffers)
     state_arrays = (
-        buffers.h01, buffers.h02, buffers.k1, buffers.k2,
-        buffers.dW, buffers.q,
+        buffers.h01, buffers.h02, buffers.k1, buffers.q,
     )
     matching_state = all(size(array) == size(u) for array in state_arrays)
     @assert matching_state "buffers do not match u"
@@ -154,8 +150,8 @@ end
     )
 end
 
-function modelb_fixed_noise_stage1_kernel!(
-    h01, k1, dW, q, u, links, sqrt_dt, dt,
+function modelb_fixed_stage1_kernel!(
+    h01, h02, k1, q, u, links, sqrt_dt, dt,
     two_kappa, m02, c3, inv_gamma, noise_amplitude,
     lattice, n,
 )
@@ -188,19 +184,23 @@ function modelb_fixed_noise_stage1_kernel!(
             u, linear, two_kappa, m02, c3, inv_gamma,
             lattice,
         )
+        old_u = u[linear]
 
-        dW[linear] = dw
         # SOSRA stage noise: sigma * I_(1,0) / dt.
         q[linear] = noise
         k1[linear] = drift
         h01[linear] =
-            u[linear] + dt * SOSRA_A21 * drift + SOSRA_B21 * noise
+            old_u + dt * SOSRA_A21 * drift + SOSRA_B21 * noise
+        # h02 is not needed until stage 2, so first use it to accumulate the
+        # k1 and dW contributions to the final state.
+        h02[linear] =
+            old_u + dt * SOSRA_ALPHA1 * drift + noise_amplitude * dw
     end
     return nothing
 end
 
 function modelb_fixed_stage2_kernel!(
-    h02, k2, u, h01, k1, q, dt,
+    u, h02, h01, k1, q, dt,
     two_kappa, m02, c3, inv_gamma,
     lattice, n,
 )
@@ -208,22 +208,28 @@ function modelb_fixed_stage2_kernel!(
     stride = blockDim().x * gridDim().x
 
     @inbounds for linear in id:stride:n
-        drift = modelb_fixed_drift(
+        k2 = modelb_fixed_drift(
             h01, linear, two_kappa, m02, c3, inv_gamma,
             lattice,
         )
+        partial_u = h02[linear]
+        old_u = u[linear]
+        old_k1 = k1[linear]
         noise = q[linear]
-        k2[linear] = drift
-        h02[linear] = u[linear] + dt * (
-            SOSRA_A31 * k1[linear] + SOSRA_A32 * drift
+        next_h02 = old_u + dt * (
+            SOSRA_A31 * old_k1 + SOSRA_A32 * k2
         ) + SOSRA_B31_B32 * noise
+
+        u[linear] = partial_u + dt * SOSRA_ALPHA2 * k2
+        # h02 held partial_u on entry, so overwrite it only after that read.
+        h02[linear] = next_h02
     end
     return nothing
 end
 
 function modelb_fixed_stage3_kernel!(
-    u, h02, k1, k2, dW, dt,
-    two_kappa, m02, c3, inv_gamma, noise_amplitude,
+    u, h02, dt,
+    two_kappa, m02, c3, inv_gamma,
     lattice, n,
 )
     id = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
@@ -234,11 +240,7 @@ function modelb_fixed_stage3_kernel!(
             h02, linear, two_kappa, m02, c3, inv_gamma,
             lattice,
         )
-        u[linear] = u[linear] + dt * (
-            SOSRA_ALPHA1 * k1[linear] +
-            SOSRA_ALPHA2 * k2[linear] +
-            SOSRA_ALPHA3 * k3
-        ) + noise_amplitude * dW[linear]
+        u[linear] = u[linear] + dt * SOSRA_ALPHA3 * k3
     end
     return nothing
 end
@@ -256,21 +258,20 @@ function modelb_fixed_step!(
     stage_threads = 1024
     stage_blocks = min(cld(length(u), stage_threads), 264)
 
-    @cuda threads=stage1_threads blocks=stage1_blocks modelb_fixed_noise_stage1_kernel!(
-        buffers.h01, buffers.k1, buffers.dW, buffers.q,
+    @cuda threads=stage1_threads blocks=stage1_blocks modelb_fixed_stage1_kernel!(
+        buffers.h01, buffers.h02, buffers.k1, buffers.q,
         u, buffers.links, sqrt(dt), dt,
         two_kappa, m02, c3, inv_gamma, noise_amplitude,
         lattice, n,
     )
     @cuda threads=stage_threads blocks=stage_blocks modelb_fixed_stage2_kernel!(
-        buffers.h02, buffers.k2, u, buffers.h01, buffers.k1,
-        buffers.q, dt,
+        u, buffers.h02, buffers.h01, buffers.k1, buffers.q, dt,
         two_kappa, m02, c3, inv_gamma,
         lattice, n,
     )
     @cuda threads=stage_threads blocks=stage_blocks modelb_fixed_stage3_kernel!(
-        u, buffers.h02, buffers.k1, buffers.k2, buffers.dW, dt,
-        two_kappa, m02, c3, inv_gamma, noise_amplitude,
+        u, buffers.h02, dt,
+        two_kappa, m02, c3, inv_gamma,
         lattice, n,
     )
     return nothing
@@ -293,8 +294,11 @@ function modelB_2d_fixed!(
     γ, T, κ, λ, dt = Float32.((γ, T, κ, λ, dt))
     tspan = Float32.(tspan)
 
-    @assert γ > 0.0f0
-    @assert T >= 0.0f0
+    all(isfinite, (γ, T, κ, λ, dt, tspan...)) || throw(ArgumentError(
+        "all physical/time parameters must be finite",
+    ))
+    γ > 0.0f0 || throw(ArgumentError("γ must be positive"))
+    T >= 0.0f0 || throw(ArgumentError("T must be nonnegative"))
     steps, dt = modelb_fixed_step_count(tspan, dt)
 
     inv_gamma = 1.0f0 / γ

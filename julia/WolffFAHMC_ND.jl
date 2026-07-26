@@ -97,18 +97,14 @@ function FourierMassMatrix{D}(N::Int, m2_eff::Float64) where D
     k_shape = ntuple(d -> d == 1 ? Nh : N, D)
     M_k = zeros(Float64, k_shape)
 
+    # Lattice dispersion p̂² = Σ_μ 4sin²(p_μ/2), the same one the calibrated
+    # metric uses.
     for idx in CartesianIndices(k_shape)
-        phat2 = 0.0
+        p2 = 0.0
         for d in 1:D
-            n_d = idx[d] - 1
-            if d == 1
-                phat2 += 4sin(π * n_d / N)^2
-            else
-                n_shifted = n_d > N ÷ 2 ? n_d - N : n_d
-                phat2 += 4sin(π * n_shifted / N)^2
-            end
+            p2 += 4 * sin(π * (idx[d] - 1) / N)^2
         end
-        M_k[idx] = phat2 + m2_eff
+        M_k[idx] = p2 + m2_eff
     end
 
     real_shape = ntuple(_ -> N, D)
@@ -122,44 +118,47 @@ function FourierMassMatrix{D}(N::Int, m2_eff::Float64) where D
     )
 end
 
-function adapt_metric!(fm::FourierMassMatrix{D}, samples::Vector{<:AbstractArray{Float64,D}};
-                       α_prior::Float64=0.05, max_cond::Float64=0.0) where D
-    N = fm.N; V = N^D
-    G_k_meas = zeros(Float64, size(fm.M_k))
-    invV = 1.0 / V
-    for φ in samples
-        mul!(fm.cbuf, fm.rfft_plan, φ)
-        @inbounds for i in eachindex(fm.cbuf)
-            z = fm.cbuf[i]
-            G_k_meas[i] += (real(z)^2 + imag(z)^2) * invV
-        end
-    end
-    ns = length(samples)
-    inv_ns = 1.0 / ns
-    one_minus = 1.0 - α_prior
-    M_k_new = similar(G_k_meas)
-    @inbounds for i in eachindex(G_k_meas)
-        Gk = one_minus * G_k_meas[i] * inv_ns + α_prior * fm.invM_k[i]
-        M_k_new[i] = 1.0 / Gk
-    end
-    if max_cond > 0
-        M_min = minimum(M_k_new)
-        M_max = maximum(M_k_new)
-        if M_max / M_min > max_cond
-            M_floor = M_max / max_cond
-            @. M_k_new = max(M_k_new, M_floor)
-        end
-    end
-    @info @sprintf("M(p) range: [%.3e, %.3e], ratio=%.1f",
-                   minimum(M_k_new), maximum(M_k_new), maximum(M_k_new)/minimum(M_k_new))
+# FA metric from a fit  1/G(p) = Z·p̂² + m²  to the measured propagator, using
+# only the diagonal modes (n,n,…,n) with the zero mode excluded.  Both Z and m²
+# come from the straight-line fit.  p̂² = Σ_d 4sin²(p_d/2) is the lattice
+# dispersion, which is what G⁻¹ is linear in.
 
-    @inbounds for i in eachindex(M_k_new)
-        m = M_k_new[i]
-        fm.M_k[i] = m
-        fm.sqrtM_k[i] = sqrt(m)
-        fm.invM_k[i] = 1.0 / m
+# p̂² of every rfft mode.
+function lattice_phat2(N::Int, ::Val{D}) where D
+    k_shape = ntuple(d -> d == 1 ? N ÷ 2 + 1 : N, Val(D))
+    P2 = zeros(Float64, k_shape)
+    for idx in CartesianIndices(k_shape)
+        s = 0.0
+        for d in 1:D
+            s += 4 * sin(π * (idx[d] - 1) / N)^2
+        end
+        P2[idx] = s
     end
-    return nothing
+    return P2
+end
+
+# Diagonal modes (n,n,…,n), n=1…N/2 (zero mode excluded): rfft indices + p̂².
+function diagonal_modes(N::Int, ::Val{D}) where D
+    ci = [CartesianIndex(ntuple(_ -> n + 1, Val(D))) for n in 1:N÷2]
+    p2 = [D * 4 * sin(π * n / N)^2 for n in 1:N÷2]
+    return ci, p2
+end
+
+# Refit Z, m² from the accumulated diagonal propagator and rebuild M(p).
+# `Gd` holds Σ|φ_k|² over `n_cal` configurations. Returns (Z, m²).
+function calibrate_metric_fit!(fm::FourierMassMatrix{D}, Gd::Vector{Float64},
+                               n_cal::Int, P2::Array{Float64,D},
+                               diag_p2::Vector{Float64}) where D
+    y = (n_cal * fm.N^D) ./ Gd                      # 1/G on the diagonal modes
+    x̄, ȳ = mean(diag_p2), mean(y)
+    Z = sum((diag_p2 .- x̄) .* (y .- ȳ)) / sum(abs2, diag_p2 .- x̄)
+    # M(k=0) = m² must stay positive; cap it at the softest non-zero mode so the
+    # zero mode is never accelerated harder than the slowest physical one.
+    m2 = max(ȳ - Z * x̄, Z * diag_p2[1] / D)
+    @. fm.M_k     = Z * P2 + m2
+    @. fm.sqrtM_k = sqrt(fm.M_k)
+    @. fm.invM_k  = 1.0 / fm.M_k
+    return Z, m2
 end
 
 function sample_momentum!(π_out::AbstractArray{Float64,D}, rng::AbstractRNG,
@@ -353,26 +352,6 @@ function wolff_flip!(phi::AbstractArray{Float64,D}, kappa::Float64,
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║           Adaptation window schedule                                     ║
-# ╚═══════════════════════════════════════════════════════════════════════════╝
-
-function build_adapt_schedule(n_warmup::Int; n_windows::Int=3,
-                              init_buf::Int=75, term_buf::Int=50)
-    avail = n_warmup - init_buf - term_buf
-    if avail < n_windows * 10
-        return [n_warmup ÷ 2]
-    end
-    w_base = avail / (2^n_windows - 1)
-    ends = Int[]
-    cum = init_buf
-    for k in 0:n_windows-1
-        cum += round(Int, w_base * 2^k)
-        push!(ends, min(cum, n_warmup - term_buf))
-    end
-    return ends
-end
-
-# ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║           Autocorrelation analysis                                       ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
@@ -440,15 +419,16 @@ end
 # ║       Wolff + FA-HMC main sampler (D-dimensional)                        ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-const MAX_WINDOW_SAMPLES = 500
-
 """
-    wolff_fahmc(; D=2, N_lat, κ, λ=0.022, n_samples=2000, n_warmup=1000,
-                  n_windows=3, n_steps=50, n_wolff=5, ε0=0.1, m2_eff=0.1,
-                  δ_target=0.75, seed=42, store_cfgs=false, save_path="")
+    wolff_fahmc(; D=2, N_lat, κ, λ=0.022, …, metric=:fit, …)
 
 D-dimensional Wolff + Fourier-Accelerated HMC sampler for φ⁴ theory on
 an N^D cubic lattice with periodic boundary conditions.
+
+`metric` selects the FA mass matrix:
+  * `:fit`   — refit M(p) = Z·p̂² + m² to the measured propagator on the diagonal
+               modes at `n_windows` checkpoints during warmup, then freeze.
+  * `:fixed` — M(p) = p̂² + m2_eff throughout (`n_windows` unused).
 
 Returns `(cfgs_or_nothing, accept_rate, ε_final, fm, avg_cluster_frac, abs_mag_series)`.
 """
@@ -468,6 +448,7 @@ function wolff_fahmc(;
     seed::Int = 42,
     store_cfgs::Bool = false,
     save_path::String = "",
+    metric::Symbol = :fit,
 )
     rng = MersenneTwister(seed)
     N = N_lat
@@ -486,13 +467,17 @@ function wolff_fahmc(;
     da = DualAveraging(ε0; δ_target=δ_target)
     ε = ε0
 
-    adapt_ends = build_adapt_schedule(n_warmup; n_windows=n_windows)
-    adapt_starts = Dict{Int,Int}()
-    prev = 1
-    for ae in adapt_ends
-        adapt_starts[ae] = prev
-        prev = ae + 1
-    end
+    # Metric calibration (:fit): accumulate the diagonal propagator from the
+    # middle third of warmup (after an initial equilibration third) and refit at
+    # `n_windows` checkpoints, then freeze.  The accumulator is never reset, so
+    # the frozen fit is the one with the most statistics.
+    P2 = lattice_phat2(N, Val(D))
+    diag_ci, diag_p2 = diagonal_modes(N, Val(D))
+    cal_lo = n_warmup ÷ 3
+    cal_steps = metric == :fit ?
+        round.(Int, range(cal_lo, 2 * n_warmup ÷ 3, length = n_windows + 1))[2:end] : Int[]
+    Gd = zeros(length(diag_ci))
+    n_cal = 0
 
     n_total = n_warmup + n_samples
     cfgs_shape = (real_shape..., n_samples)
@@ -513,23 +498,20 @@ function wolff_fahmc(;
     n_accept = 0
     total_cluster_size = 0
     total_wolff_flips = 0
-    window_samples = Array{Float64,D}[]
-    window_thin = 1
 
     mem_mode = store_cfgs ? "full array" : (save_to_disk ? "stream to disk" : "observables only")
     mem_est = store_cfgs ? @sprintf("%.0f MB", V*n_samples*8/1e6) : "< 1 MB"
 
+    metric_desc = metric == :fit ?
+        "fit  (M=Z·p̂²+m², refit@$cal_steps)" : "fixed (M=p̂²+$m2_eff)"
     println("=" ^ 60)
     println("Wolff + Fourier-Accelerated HMC ($(D)D)")
     println("  N=$N ($(D)D, V=$V), κ=$κ, λ=$λ")
     println("  n_steps=$n_steps (HMC leapfrog), n_wolff=$n_wolff (cluster flips/iter)")
-    println("  n_warmup=$n_warmup, n_windows=$n_windows")
-    println("  adapt windows end at: $adapt_ends")
+    println("  n_warmup=$n_warmup, metric: $metric_desc")
     println("  n_samples=$n_samples, δ_target=$δ_target")
     println("  memory mode: $mem_mode ($mem_est)")
     println("=" ^ 60)
-
-    current_window_idx = 1
 
     prog = Progress(n_total; desc="Wolff+FA-HMC $(D)D ", showspeed=true)
     for step in 1:n_total
@@ -551,34 +533,17 @@ function wolff_fahmc(;
         if step <= n_warmup
             ε = da_update!(da, accept_prob)
 
-            if current_window_idx <= length(adapt_ends)
-                ws_start = adapt_starts[adapt_ends[current_window_idx]]
-                if step >= ws_start && step <= adapt_ends[current_window_idx]
-                    window_len = adapt_ends[current_window_idx] - ws_start + 1
-                    window_thin = max(1, window_len ÷ MAX_WINDOW_SAMPLES)
-                    if (step - ws_start) % window_thin == 0
-                        push!(window_samples, copy(φ))
-                    end
+            if metric == :fit && !isempty(cal_steps) && step >= cal_lo && step <= cal_steps[end]
+                mul!(fm.cbuf, fm.rfft_plan, φ)
+                @inbounds for j in eachindex(diag_ci)
+                    Gd[j] += abs2(fm.cbuf[diag_ci[j]])
                 end
-
-                if step == adapt_ends[current_window_idx]
-                    n_ws = length(window_samples)
-                    @info @sprintf("Window %d/%d done (steps %d–%d, %d samples). Adapting M(p)...",
-                                   current_window_idx, length(adapt_ends),
-                                   ws_start, step, n_ws)
-                    if n_ws >= 20
-                        adapt_metric!(fm, window_samples)
-                    else
-                        @warn "Too few samples ($n_ws), skipping metric adaptation"
-                    end
-                    empty!(window_samples)
-
-                    ε_restart = ε * 0.5
-                    da = DualAveraging(ε_restart; δ_target=δ_target)
-                    ε = ε_restart
-                    @info @sprintf("  → ε reset to %.6f", ε_restart)
-
-                    current_window_idx += 1
+                n_cal += 1
+                if step in cal_steps
+                    Z, m2 = calibrate_metric_fit!(fm, Gd, n_cal, P2, diag_p2)
+                    da = DualAveraging(ε; δ_target=δ_target)   # re-adapt ε to new metric (no reset-down)
+                    @info @sprintf("calibrate @ step %d (%d cfgs): Z=%.4f, m²=%.4f, M cond=%.1f",
+                                   step, n_cal, Z, m2, maximum(fm.M_k) / minimum(fm.M_k))
                 end
             end
 
@@ -607,12 +572,7 @@ function wolff_fahmc(;
             end
         end
 
-        phase_str = if step <= n_warmup
-            wi = min(current_window_idx, length(adapt_ends))
-            wi <= length(adapt_ends) ? "warmup/win$wi" : "warmup/final"
-        else
-            "production"
-        end
+        phase_str = step <= n_warmup ? "warmup" : "production"
 
         avg_cs = step_cluster_sum / max(n_wolff, 1)
         next!(prog; showvalues=[
