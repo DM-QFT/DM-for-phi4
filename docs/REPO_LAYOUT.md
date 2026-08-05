@@ -141,6 +141,14 @@ runs/<run名>/
 
 `data/` 与 `dat/` 是重灾区，语义完全靠上下文猜。现在 `runs/<run>/data/` 存的是采样构型，改叫 `samples/`；`analysis/dat/` 存的是导出表格，改叫 `results/<主题>/`。
 
+**规则 A 附则 — 项目自有的库模块留在项目根，不下沉。**
+
+`train/` `sample/` `analysis/` `solver/` `tests/` 装的是**入口脚本**，被人直接调用。项目自己的库模块（4Dphi4 的 `networks_4d.py`、`networks_nd.py`、`diffusion_lightning.py`、`phi4_action.py`，以及 `Project.toml`、`requirements.txt`）不属于任何一类，留在项目根。
+
+理由是所有入口脚本靠 `sys.path.insert(0, 项目根)` 找它们。库模块一下沉，每个脚本都要多算一层，而入口脚本本来就已经因为进 `train/` 多算了一层。
+
+同理，`analysis/<主题>/` 的主题子目录**只在分属多个主题时才建**。像 betaconfig 那样整个项目就一个主题、5 个脚本，直接平铺在 `analysis/` 下，不要为了对称硬造一层。
+
 **规则 B — 人写的目录最多 3 层，机器生成的不限。**
 
 ```
