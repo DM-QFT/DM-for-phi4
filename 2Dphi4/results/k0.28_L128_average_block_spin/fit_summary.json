@@ -1,0 +1,47 @@
+{
+  "source": "/work/gw97/w97000/project/DM/2Dphi4/trainingdata/cfgs_wolff_fahmc_k=0.28_l=0.022_128^2.jld2",
+  "blocked_configurations": "/work/gw97/w97000/project/DM/2Dphi4/results/k0.28_L128_average_block_spin/cfgs_average_block_2a.h5",
+  "n_configurations": 10240,
+  "blocking": "non-overlapping 2x2 arithmetic mean",
+  "fit_model": "G(p) = 1 / (z * p_hat_squared + m2)",
+  "diagonal_modes": {
+    "a": "(n,n), n=1,...,64; all nonzero diagonal modes fitted",
+    "2a": "(n,n), n=1,...,32; all nonzero diagonal modes fitted"
+  },
+  "momentum": "p_hat_squared = 8 sin(pi*n/L)^2 in each lattice's units",
+  "bootstrap_samples": 500,
+  "a": {
+    "L": 128,
+    "spacing_in_a": 1,
+    "z": 0.5758153082813285,
+    "z_error": 0.0009090893837075826,
+    "m2": 0.24742294656016775,
+    "m2_error": 0.0010303822410454718,
+    "mass_lattice_units": 0.4974162709041269,
+    "mass_lattice_units_error": 0.0010355009233990187,
+    "Z": 0.5758153082813285,
+    "Z_error": 0.0009090893837075826,
+    "xi_lattice_units": 1.5255330328308416,
+    "xi_lattice_units_error": 0.003856050034523795,
+    "chi2_per_dof": 2.3742149879946313,
+    "xi_in_a": 1.5255330328308416,
+    "xi_in_a_error": 0.003856050034523795
+  },
+  "2a": {
+    "L": 64,
+    "spacing_in_a": 2,
+    "z": 1.035441950027892,
+    "z_error": 0.00255632056046708,
+    "m2": 0.8472307544879919,
+    "m2_error": 0.003589453975880838,
+    "mass_lattice_units": 0.9204513862708839,
+    "mass_lattice_units_error": 0.0019501700133431252,
+    "Z": 1.035441950027892,
+    "Z_error": 0.00255632056046708,
+    "xi_lattice_units": 1.1055083365108773,
+    "xi_lattice_units_error": 0.0031731664111591708,
+    "chi2_per_dof": 94.29216488987358,
+    "xi_in_a": 2.2110166730217546,
+    "xi_in_a_error": 0.0063463328223183416
+  }
+}

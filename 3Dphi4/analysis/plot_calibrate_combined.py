@@ -8,13 +8,13 @@ Usage (from 3Dphi4/):
         --inputs analysis/calibrate_h_3d_L64_k0.18_sigma2000.npz \
                  analysis/calibrate_h_3d_L64_k0.1923_sigma2048.npz \
                  analysis/calibrate_h_3d_L64_k0.2_sigma2760.npz \
-        --out ../draft/figures/3Dphi4/calibrate_h_3d_L64_multi_kappa.pdf
+        --out ../paper/DM/figures/3Dphi4/calibrate_h_3d_L64_multi_kappa.pdf
 
     python analysis/plot_calibrate_combined.py --kind t_mh \
         --inputs analysis/calibrate_t_mh_3d_L64_k0.18_sigma2000.npz \
                  analysis/calibrate_t_mh_3d_L64_k0.1923_sigma2048.npz \
                  analysis/calibrate_t_mh_3d_L64_k0.2_sigma2760.npz \
-        --out ../draft/figures/3Dphi4/calibrate_t_mh_3d_L64_multi_kappa.pdf
+        --out ../paper/DM/figures/3Dphi4/calibrate_t_mh_3d_L64_multi_kappa.pdf
 """
 
 import argparse

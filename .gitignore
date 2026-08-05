@@ -53,7 +53,7 @@ lightning_logs/
 *-blx.bib
 texput.log
 
-# 生成的图片和数据（draft/figures/ 中的论文图保留）
+# 生成的图片和数据（paper/DM/figures/ 中的论文图保留）
 *.png
 *.svg
 *.csv
@@ -61,7 +61,7 @@ texput.log
 /old/
 
 # Overleaf（独立 git 仓库）
-overleaf/
+/paper/overleaf/
 
 # 第三方参考实现
 references/
@@ -96,19 +96,20 @@ core.*
 .claude/settings.local.json
 
 # === 与本论文 (2D/3D phi^4 diffusion) 无关或不公开的内容 ===
-# 论文草稿源码由 arXiv 承载，不入库
-/draft/
+# 论文草稿源码由 arXiv 承载，不入库（paper/ModelB/ 仍跟踪）
+/paper/DM/
+/paper/PIKDM/
+/paper/betaconfig/
+/paper/proposal/
 # 其他物理课题 / 探索性目录
 /PIKDM/
 /Yukawa/
 /4Dphi4/
 /RGDM/
-/archive/
-# 个人材料与过时归档
-/docs/proposal/
-/docs/archive/
+# 归档区。已跟踪的历史文件由 git mv 保留，此条只挡新增内容
+/attic/
 /docs/yukawa_force_ratio_investigation.md
-/scripts/sync_overleaf.sh
+/tools/sync_overleaf.sh
 # 本仓库自身的元配置不入库
 /requirements.txt
 /CLAUDE.md

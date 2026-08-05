@@ -69,9 +69,9 @@ echo
 echo "=== Step 3: multi-kappa combined pdf ==="
 "$HOME/envs/nenv2/bin/python" analysis/plot_dm_mc_tau_vs_c_combined.py \
     --inputs "${NPZS[@]}" \
-    --out ../draft/figures/3Dphi4/dm_mc_tau_vs_c_3d_L${L}_multi_kappa_ep${EPOCH}${SUFFIX}.pdf
+    --out ../paper/DM/figures/3Dphi4/dm_mc_tau_vs_c_3d_L${L}_multi_kappa_ep${EPOCH}${SUFFIX}.pdf
 
 echo "Done."
 echo "  per-kappa npz/pdf : analysis/results/"
 echo "  per-kappa dat     : analysis/dat/"
-echo "  combined pdf      : draft/figures/3Dphi4/"
+echo "  combined pdf      : paper/DM/figures/3Dphi4/"

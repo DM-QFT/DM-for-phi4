@@ -53,6 +53,9 @@ def paired_jackknife_sem(left, right):
 
 def statistics(cross_values, power_i, power_j):
     """F, its sem, rho = <F>/sqrt(<G_i><G_j>), its jackknife sem, and the leaves."""
+    cross_values = np.asarray(cross_values, dtype=np.float64)
+    power_i = np.asarray(power_i, dtype=np.float64)
+    power_j = np.asarray(power_j, dtype=np.float64)
     n = len(cross_values)
     correlation = cross_values.mean(axis=0)
     power_i_mean = power_i.mean(axis=0)

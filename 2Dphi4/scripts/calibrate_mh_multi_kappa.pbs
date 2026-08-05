@@ -13,7 +13,7 @@
 # evaluation time t_mh, averaging acceptance rates over an early window
 # (epochs 1-49) and a late window (epochs 6000-10000).  Outputs are .pdf
 # + .npz pairs under acceptance_rate/, plus combined multi-kappa figures
-# under draft/figures/2Dphi4/.
+# under paper/DM/figures/2Dphi4/.
 
 set -e
 
@@ -84,14 +84,14 @@ python acceptance_rate/plot_calibrate_combined.py --kind h \
         ${OUT_DIR}/calibrate_h_L128_k0.26_sigma300.npz \
         ${OUT_DIR}/calibrate_h_L128_k0.2705_sigma450.npz \
         ${OUT_DIR}/calibrate_h_L128_k0.28_sigma640.npz \
-    --out  ../draft/figures/2Dphi4/calibrate_h_L128_multi_kappa.pdf
+    --out  ../paper/DM/figures/2Dphi4/calibrate_h_L128_multi_kappa.pdf
 
 python acceptance_rate/plot_calibrate_combined.py --kind t_mh \
     --inputs \
         ${OUT_DIR}/calibrate_t_mh_L128_k0.26_sigma300.npz \
         ${OUT_DIR}/calibrate_t_mh_L128_k0.2705_sigma450.npz \
         ${OUT_DIR}/calibrate_t_mh_L128_k0.28_sigma640.npz \
-    --out  ../draft/figures/2Dphi4/calibrate_t_mh_L128_multi_kappa.pdf
+    --out  ../paper/DM/figures/2Dphi4/calibrate_t_mh_L128_multi_kappa.pdf
 
 echo
 echo "Finished : $(date '+%F %T')"

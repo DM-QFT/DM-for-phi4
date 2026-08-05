@@ -1,6 +1,6 @@
 using JLD2, Statistics
 
-include(joinpath(@__DIR__, "..", "..", "julia", "WolffFAHMC_ND.jl"))
+include(joinpath(@__DIR__, "..", "..", "tools", "julia", "WolffFAHMC_ND.jl"))
 
 # κc gives U4=0.6103 at L=128, near the 2D Ising value 0.6106.
 κ, λ = 0.27088, 0.022

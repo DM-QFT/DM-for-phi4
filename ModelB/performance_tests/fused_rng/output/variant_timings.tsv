@@ -1,6 +1,0 @@
-method	ms_per_step	speedup	stage1_registers	link_workspace_mib	max_M_drift
-standard_curand	0.30047479	1	40	128	1.4901161e-08
-separate_gpuarrays	0.31539252	0.95270106	40	128	1.3504177e-08
-direct_stateless	0.31725818	0.94709865	78	0	1.44355e-08
-tiled_stateless	0.29381153	1.0226787	57	0	1.44355e-08
-overlapped_curand	0.29918569	1.0043087	40	256	1.4901161e-08

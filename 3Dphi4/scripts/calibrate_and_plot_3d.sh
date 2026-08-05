@@ -80,13 +80,13 @@ echo "=== Step 2: combine per-kappa npz into multi-kappa figures ==="
         analysis/calibrate_h_3d_L64_k0.18_sigma2000${EMA_SUF}.npz \
         analysis/calibrate_h_3d_L64_k0.1923_sigma2048${EMA_SUF}.npz \
         analysis/calibrate_h_3d_L64_k0.2_sigma2760${EMA_SUF}.npz \
-    --out ../draft/figures/3Dphi4/calibrate_h_3d_L64_multi_kappa${FIG_SUF}.pdf
+    --out ../paper/DM/figures/3Dphi4/calibrate_h_3d_L64_multi_kappa${FIG_SUF}.pdf
 
 "$HOME/envs/nenv2/bin/python" analysis/plot_calibrate_combined.py --kind t_mh \
     --inputs \
         analysis/calibrate_t_mh_3d_L64_k0.18_sigma2000${EMA_SUF}.npz \
         analysis/calibrate_t_mh_3d_L64_k0.1923_sigma2048${EMA_SUF}.npz \
         analysis/calibrate_t_mh_3d_L64_k0.2_sigma2760${EMA_SUF}.npz \
-    --out ../draft/figures/3Dphi4/calibrate_t_mh_3d_L64_multi_kappa${FIG_SUF}.pdf
+    --out ../paper/DM/figures/3Dphi4/calibrate_t_mh_3d_L64_multi_kappa${FIG_SUF}.pdf
 
 echo "Done."

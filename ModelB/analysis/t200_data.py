@@ -5,6 +5,7 @@ Writes tables and one npz per initial condition; makes no figures.
 
 from pathlib import Path
 import csv
+import os
 
 import h5py
 import numpy as np
@@ -21,23 +22,27 @@ from diagonal_modes import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-RUN = ROOT / "runs/modelBcond_L32_k0.28_l0.022_t10_ncsnpp_corrgauss_uniformM_noskip"
+RUN = Path(os.environ.get(
+    "MODELB_T200_RUN",
+    ROOT / "runs/modelBcond_L32_k0.28_l0.022_t10_ncsnpp_corrgauss_uniformM_noskip",
+)).expanduser().resolve()
 OUTPUT = RUN / "t200_ep10000_dm_vs_modelb"
 TIMES = np.arange(0, 201, 10, dtype=np.int32)
 SNAPSHOT_TIMES = (0, 10, 20, 50, 100, 150, 200)
+N_SAMPLES = int(os.environ.get("MODELB_T200_N", "5120"))
 VOLUME = 32 * 32
 CHAINS = ("modelb", "dm")
 KEYS = ("phi2", "phi4", "variance", "mean_abs_drift")
 INITIALS = {
     "hmc": (
-        RUN / "samples/hmc_chain_ep10000_N5120_seed20260901",
-        "hmc_ep10000_t0_N5120.npz",
+        RUN / f"samples/hmc_chain_ep10000_N{N_SAMPLES}_seed20260901",
+        f"hmc_ep10000_t0_N{N_SAMPLES}.npz",
         20260901,
         20261101,
     ),
     "gaussian": (
-        RUN / "samples/gaussian_chain_ep10000_N5120_seed20261001",
-        "gaussian_ep10000_t0_N5120_seed20260721.npz",
+        RUN / f"samples/gaussian_chain_ep10000_N{N_SAMPLES}_seed20261001",
+        f"gaussian_ep10000_t0_N{N_SAMPLES}_seed20260721.npz",
         20261001,
         20261201,
     ),
@@ -48,14 +53,14 @@ def dm_path(directory, initial_name, first_seed, time):
     if time == 0:
         return directory / initial_name
     return directory / (
-        f"chain_ep10000_t{time}_via_iterated_t10dm5120_"
+        f"chain_ep10000_t{time}_via_iterated_t10dm{N_SAMPLES}_"
         f"steps2000_log_seed{first_seed + time // 10 - 1}.npz"
     )
 
 
 def modelb_path(directory, initial_key, seed, time):
     return directory / "physical_reference_t200" / (
-        f"modelB_L32_Ne5120_{initial_key}_t{time}_chain_dt0.002_seed{seed}.jld2"
+        f"modelB_L32_Ne{N_SAMPLES}_{initial_key}_t{time}_chain_dt0.002_seed{seed}.jld2"
     )
 
 
@@ -64,7 +69,10 @@ def load_fields(path):
         with np.load(path, allow_pickle=False) as archive:
             return np.asarray(archive["phi_gen"], dtype=np.float32)
     with h5py.File(path, "r") as handle:
-        return np.asarray(handle["cfgs"], dtype=np.float32)
+        fields = np.asarray(handle["cfgs"], dtype=np.float32)
+    # Julia cfgs[x,y,ensemble] appears in h5py as [ensemble,y,x].
+    # Restore the npz convention [ensemble,x,y].
+    return fields.swapaxes(1, 2)
 
 
 def lag_correlations(modes):

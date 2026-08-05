@@ -1,0 +1,8 @@
+# source=dynamic_exponent/results/dispersion_L32/fields_L32_l1_b2.jld2	Nboot=400	sample_dt=1
+# class	window	t_start	t_end	tau	tau_err	C_half_duration	Nboot_valid
+axial	prefix	0	2000	671.096040	58.087995	0.26351091	400
+axial	prefix	0	2500	646.132023	48.636439	0.20334056	400
+axial	prefix	0	3000	636.339889	47.247126	0.16681349	400
+diag	prefix	0	2000	188.628394	9.663694	0.03635454	400
+diag	prefix	0	2500	189.872802	9.233398	0.03820244	400
+diag	prefix	0	3000	193.050024	8.587449	0.01423981	400

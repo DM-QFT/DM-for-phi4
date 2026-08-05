@@ -1,0 +1,41 @@
+{
+  "L": 32,
+  "lambda": 1.0,
+  "susceptibility": "L^2*(<m^2>-<|m|>^2)",
+  "kappa_peak": 0.33425427103043015,
+  "bootstrap_std": 0.00016335085346132837,
+  "fit_window_systematic": 0.0001687149507351715,
+  "total_uncertainty_quadrature": 0.00023483661539060668,
+  "n_samples_per_kappa": 65536,
+  "n_warmup": 2000,
+  "block_size": 512,
+  "fit_windows": {
+    "3": {
+      "kappa_peak": 0.33423693379008224,
+      "bootstrap_std": 0.00019344847239473003,
+      "valid_bootstrap": 1534,
+      "fit_range": [
+        0.3335,
+        0.3345
+      ]
+    },
+    "5": {
+      "kappa_peak": 0.334085556079695,
+      "bootstrap_std": 0.000306904825437588,
+      "valid_bootstrap": 1776,
+      "fit_range": [
+        0.333,
+        0.335
+      ]
+    },
+    "7": {
+      "kappa_peak": 0.33425427103043015,
+      "bootstrap_std": 0.00016335085346132837,
+      "valid_bootstrap": 1996,
+      "fit_range": [
+        0.3325,
+        0.3355
+      ]
+    }
+  }
+}

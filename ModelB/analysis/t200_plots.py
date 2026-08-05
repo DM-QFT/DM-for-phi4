@@ -1,6 +1,7 @@
 """Figures for the ep10000 chains through t=200; reads only t200_data.py output."""
 
 from pathlib import Path
+import os
 
 import matplotlib
 
@@ -10,7 +11,10 @@ from matplotlib.colors import Normalize, TwoSlopeNorm
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
-RUN = ROOT / "runs/modelBcond_L32_k0.28_l0.022_t10_ncsnpp_corrgauss_uniformM_noskip"
+RUN = Path(os.environ.get(
+    "MODELB_T200_RUN",
+    ROOT / "runs/modelBcond_L32_k0.28_l0.022_t10_ncsnpp_corrgauss_uniformM_noskip",
+)).expanduser().resolve()
 DATA = RUN / "t200_ep10000_dm_vs_modelb"
 CHAIN_OUTPUT = RUN / "t200_ep10000_analysis"
 LABELS = {"hmc": "HMC initial", "gaussian": "Gaussian initial"}
@@ -31,7 +35,7 @@ def grid_axes():
 
 def decorate(axis, mode, khat, times, ylabel, xlabel):
     axis.grid(alpha=0.18)
-    axis.set_xticks((0, 50, 100, 150, 200))
+    axis.set_xticks(np.linspace(0, times[-1], 5))
     axis.set_title(fr"$n={mode + 1}$, $\hat k={khat[mode]:.3f}$")
     axis.set_ylabel(ylabel)
     if mode // 4 == 3:
@@ -51,7 +55,7 @@ def plot_lag_average(key, data):
             lower, upper = min(lower, (rho - error).min()), max(upper, (rho + error).max())
         span = max(upper - lower, 0.02)
         axis.set_ylim(min(lower - 0.1 * span, -0.005), max(upper + 0.1 * span, 0.005))
-        axis.set_xlim(5, 205)
+        axis.set_xlim(times[1] / 2, times[-1] + times[1] / 2)
         axis.axhline(0, color="black", lw=0.5)
         decorate(axis, mode, khat, times, r"$\rho_n(\Delta t)$", r"$\Delta t$")
     handles, labels = axes.flat[0].get_legend_handles_labels()

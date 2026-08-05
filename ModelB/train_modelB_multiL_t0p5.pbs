@@ -1,0 +1,39 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=24:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_mix_t0p5
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_multiL_t0p5.pbs.log
+
+set -euo pipefail
+
+cd /work/gw97/w97000/project/DM/ModelB
+source /etc/profile.d/modules.sh
+module load miniforge3
+source activate nenv2
+
+echo "Job ID: ${PBS_JOBID}"
+echo "Node: $(hostname)"
+echo "Start: $(date '+%F %T')"
+module list
+nvidia-smi -L
+
+PYTHONUNBUFFERED=1 python -u -m solver.training.train_modelB_cond \
+    --L_list 8,16,32 \
+    --kappa 0.34034 --lam 1.0 --horizon 0.5 \
+    --sigma 250 --lr 0.001 --batch_size 192 \
+    --epochs 10000 --ema_start 0 --num_ckpts 100 \
+    --device cuda:0 --compile_mode reduce-overhead \
+    --output_suffix _hmc_noskip \
+    --cond_paths \
+        /work/gw97/w97000/project/DM/ModelB/training_data/modelB_L8_Ne51200_hmc_l1_kappa_0.340340_t0_seed2026080601.jld2 \
+        /work/gw97/w97000/project/DM/ModelB/training_data/modelB_L16_Ne51200_hmc_l1_kappa_0.340340_t0_seed2026080501.jld2 \
+        /work/gw97/w97000/project/DM/ModelB/training_data/modelB_L32_Ne51200_hmc_l1_kappa_0.340340_t0_seed2026080101.jld2 \
+    --target_paths \
+        /work/gw97/w97000/project/DM/ModelB/training_data/modelB_L8_Ne51200_hmc_l1_kappa_0.340340_t0p5_dt0.002_seed2026080602.jld2 \
+        /work/gw97/w97000/project/DM/ModelB/training_data/modelB_L16_Ne51200_hmc_l1_kappa_0.340340_t0p5_dt0.002_seed2026080502.jld2 \
+        /work/gw97/w97000/project/DM/ModelB/training_data/modelB_L32_Ne51200_hmc_l1_kappa_0.340340_t0p5_dt0.002_seed2026080102.jld2
+
+echo "Finish: $(date '+%F %T')"

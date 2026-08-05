@@ -62,6 +62,6 @@ echo "=== Step 2: combine into 3-panel multi-kappa figure ==="
         score_quality_analysis/score_quality_vs_epoch_L128_k0.26_sigma300${EMA_SUF}.npz \
         score_quality_analysis/score_quality_vs_epoch_L128_k0.2705_sigma450${EMA_SUF}.npz \
         score_quality_analysis/score_quality_vs_epoch_L128_k0.28_sigma640${EMA_SUF}.npz \
-    --out ../draft/figures/2Dphi4/score_quality_vs_epoch_L128_3panel${FIG_SUF}.pdf
+    --out ../paper/DM/figures/2Dphi4/score_quality_vs_epoch_L128_3panel${FIG_SUF}.pdf
 
 echo "Done."

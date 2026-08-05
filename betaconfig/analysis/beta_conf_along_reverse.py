@@ -30,11 +30,11 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-# repo layout: this file is at 2Dphi4/analysis/, repo root is parents[2]
+# repo layout: this file is at betaconfig/, repo root is the parent
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+ROOT = HERE.parents[1]           # betaconfig/analysis/ -> repo root
 sys.path.append(str(ROOT))                  # repo root: phi4_action, diffusion_lightning, networks, ...
-sys.path.append(str(HERE.parents[1]))           # 2Dphi4/: sample_phi4, ...
+sys.path.append(str(ROOT / "2Dphi4"))           # 2Dphi4/: sample_phi4, ...
 
 from diffusion_lightning import DiffusionModel, marginal_prob_std, diffusion_coeff
 from networks import NCSNpp2D
@@ -313,7 +313,7 @@ def main():
           f"± {hmc_fwd['sem'][-1]:.4f}")
 
     # 3) Save
-    out_dir = Path("results/beta_conf_traj")
+    out_dir = HERE.parent / "results" / "beta_conf_traj"
     out_dir.mkdir(parents=True, exist_ok=True)
     tag = (f"L{args.L}_k{args.k}_l{args.l}_ep{args.ep}_steps{args.num_steps}"
            f"_{args.schedule}_N{args.num_samples}"

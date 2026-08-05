@@ -81,13 +81,13 @@ echo "=== Step 2: combine per-kappa npz into multi-kappa figures ==="
         acceptance_rate/calibrate_h_L128_k0.26_sigma300${EMA_SUF}.npz \
         acceptance_rate/calibrate_h_L128_k0.2705_sigma450${EMA_SUF}.npz \
         acceptance_rate/calibrate_h_L128_k0.28_sigma640${EMA_SUF}.npz \
-    --out ../draft/figures/2Dphi4/calibrate_h_L128_multi_kappa${FIG_SUF}.pdf
+    --out ../paper/DM/figures/2Dphi4/calibrate_h_L128_multi_kappa${FIG_SUF}.pdf
 
 "$HOME/envs/nenv2/bin/python" acceptance_rate/plot_calibrate_combined.py --kind t_mh \
     --inputs \
         acceptance_rate/calibrate_t_mh_L128_k0.26_sigma300${EMA_SUF}.npz \
         acceptance_rate/calibrate_t_mh_L128_k0.2705_sigma450${EMA_SUF}.npz \
         acceptance_rate/calibrate_t_mh_L128_k0.28_sigma640${EMA_SUF}.npz \
-    --out ../draft/figures/2Dphi4/calibrate_t_mh_L128_multi_kappa${FIG_SUF}.pdf
+    --out ../paper/DM/figures/2Dphi4/calibrate_t_mh_L128_multi_kappa${FIG_SUF}.pdf
 
 echo "Done."

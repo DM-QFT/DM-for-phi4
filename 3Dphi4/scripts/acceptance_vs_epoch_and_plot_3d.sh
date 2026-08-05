@@ -64,6 +64,6 @@ echo "=== Step 2: combine per-kappa npz into multi-kappa figure ==="
         analysis/acceptance_vs_epoch_3d_L64_k0.18_sigma2000${EMA_SUF}.npz \
         analysis/acceptance_vs_epoch_3d_L64_k0.1923_sigma2048${EMA_SUF}.npz \
         analysis/acceptance_vs_epoch_3d_L64_k0.2_sigma2760${EMA_SUF}.npz \
-    --out ../draft/figures/3Dphi4/acceptance_vs_epoch_3d_L64_multi_kappa${FIG_SUF}.pdf
+    --out ../paper/DM/figures/3Dphi4/acceptance_vs_epoch_3d_L64_multi_kappa${FIG_SUF}.pdf
 
 echo "Done."

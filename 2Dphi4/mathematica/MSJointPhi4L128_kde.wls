@@ -18,7 +18,7 @@
 (* ---- Init: paths, theme, shared helpers ---- *)
 SetDirectory[DirectoryName[
    If[$InputFileName === "", NotebookFileName[], $InputFileName]]];
-Get[FileNameJoin[{"..", "..", "mathematica", "academic.m"}]];
+Get[FileNameJoin[{"..", "..", "tools", "mathematica", "academic.m"}]];
 Needs["MaTeX`"];
 
 (* MaTeX automatically caches rendered LaTeX images to

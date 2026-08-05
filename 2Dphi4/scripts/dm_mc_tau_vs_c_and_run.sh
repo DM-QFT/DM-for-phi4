@@ -70,9 +70,9 @@ echo
 echo "=== Step 3: multi-kappa combined pdf ==="
 "$HOME/envs/nenv2/bin/python" acceptance_rate/plot_dm_mc_tau_vs_c_combined.py \
     --inputs "${NPZS[@]}" \
-    --out ../draft/figures/2Dphi4/dm_mc_tau_vs_c_L${L}_multi_kappa_ep${EPOCH}${SUFFIX}.pdf
+    --out ../paper/DM/figures/2Dphi4/dm_mc_tau_vs_c_L${L}_multi_kappa_ep${EPOCH}${SUFFIX}.pdf
 
 echo "Done."
 echo "  per-kappa npz/pdf : acceptance_rate/results/"
 echo "  per-kappa dat     : acceptance_rate/dat/"
-echo "  combined pdf      : draft/figures/2Dphi4/"
+echo "  combined pdf      : paper/DM/figures/2Dphi4/"

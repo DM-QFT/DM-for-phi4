@@ -3,7 +3,7 @@ HMC-only physical-observable table for 2D phi^4, lattice sizes L=16,32,64
 across kappa = 0.26 (symmetric), 0.2705 (near-critical), 0.28 (broken).
 
 Reproduces the column set and conventions of \\Tab{tab:multiL_HMC_cumulants}
-in draft/DM.tex, restricted to the HMC (Wolff+FAHMC) reference. To guarantee
+in paper/DM/DM.tex, restricted to the HMC (Wolff+FAHMC) reference. To guarantee
 the estimator definitions are identical to the ones that produced the paper
 table, the dimension-agnostic estimators are imported directly from the
 authoritative generator
@@ -228,7 +228,7 @@ def write_txt_table(rows, out, args):
            f"{'κ8_s':>13} {'U4_s':>13}")
     lines = [
         f"HMC (Wolff+FAHMC) physical observables — 2D phi^4, λ={args.lam:g}",
-        "columns follow draft/DM.tex Tab. tab:multiL_HMC_cumulants (HMC only)",
+        "columns follow paper/DM/DM.tex Tab. tab:multiL_HMC_cumulants (HMC only)",
         "Z_2-symmetrised raw field space; cumulants by moment recursion;",
         f"bootstrap 1σ over cfgs (n_boot={args.n_boot}, "
         f"{'independent' if args.independent_bootstrap else 'paired'}).",

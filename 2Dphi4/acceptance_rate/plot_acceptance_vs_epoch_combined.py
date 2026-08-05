@@ -7,7 +7,7 @@ Usage (from 2Dphi4/):
             acceptance_rate/acceptance_vs_epoch_L128_k0.26_sigma300_ema.npz \
             acceptance_rate/acceptance_vs_epoch_L128_k0.2705_sigma450_ema.npz \
             acceptance_rate/acceptance_vs_epoch_L128_k0.28_sigma640_ema.npz \
-        --out ../draft/figures/2Dphi4/acceptance_vs_epoch_L128_multi_kappa_ema.pdf
+        --out ../paper/DM/figures/2Dphi4/acceptance_vs_epoch_L128_multi_kappa_ema.pdf
 """
 
 import argparse

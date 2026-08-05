@@ -3,7 +3,7 @@
 #
 # HMC-only physical-observable table for 2D φ⁴ at L=16,32,64 across
 # κ=0.26 (symmetric), 0.2705 (near-critical), 0.28 (broken).  Reproduces the
-# column set of draft/DM.tex Tab. tab:multiL_HMC_cumulants (HMC reference):
+# column set of paper/DM/DM.tex Tab. tab:multiL_HMC_cumulants (HMC reference):
 #
 #   Global / action:  ⟨|φ̄|⟩, χ=V(⟨M²⟩−⟨|M|⟩²), ⟨S⟩/V, U₄
 #   Zero-mode cumulants κ⁽⁰⟩₂,₄,₆,₈ of M=φ̄
@@ -143,7 +143,7 @@ function write_txt_table(rows, out, lam, n_bins)
                    "<|phi_x|>", "k2_s", "k4_s", "k6_s", "k8_s", "U4_s")
     lines = String[
         "HMC (Wolff+FAHMC) physical observables — 2D phi^4, lambda=$(@sprintf("%g",lam))",
-        "columns follow draft/DM.tex Tab. tab:multiL_HMC_cumulants (HMC only)",
+        "columns follow paper/DM/DM.tex Tab. tab:multiL_HMC_cumulants (HMC only)",
         "Z_2-symmetric even-moment cumulants; binned jackknife over cfgs (n_bins=$n_bins).",
         "chi = V(<M^2>-<|M|>^2),  U4 = 1 - <M^4>/(3<M^2>^2),",
         "k0_n = zero-mode cumulants of M=phi_bar,  kn_s = single-site (persite_avg).",

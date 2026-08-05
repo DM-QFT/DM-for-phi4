@@ -8,7 +8,7 @@ Usage (from 3Dphi4/):
             analysis/results/dm_mc_tau_vs_c_3d_L64_multiL_k0.18_ep20000_ema.npz \
             analysis/results/dm_mc_tau_vs_c_3d_L64_multiL_k0.1923_ep20000_ema.npz \
             analysis/results/dm_mc_tau_vs_c_3d_L64_multiL_k0.2_ep20000_ema.npz \
-        --out ../draft/figures/3Dphi4/dm_mc_tau_vs_c_3d_L64_multi_kappa_ema.pdf
+        --out ../paper/DM/figures/3Dphi4/dm_mc_tau_vs_c_3d_L64_multi_kappa_ema.pdf
 """
 
 import argparse

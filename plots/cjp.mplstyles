@@ -1,0 +1,90 @@
+# APS (PRD/PRL) style, Mathematica Academic/Vibrant look.
+
+# Computer Modern, matching the reference figures. usetex would give the same
+# glyphs but needs type1cm.sty and dvipng, neither installed here.
+text.usetex        : False
+font.family        : serif
+font.serif         : cmr10, DejaVu Serif
+mathtext.fontset   : cm
+# cmr10 has no U+2212, so minus signs must come from mathtext (cmsy10).
+axes.unicode_minus : False
+
+font.size          : 9
+axes.labelsize     : 9
+axes.titlesize     : 9
+xtick.labelsize    : 8
+ytick.labelsize    : 8
+legend.fontsize    : 8
+
+# PRD/PRL single column 3.375 in; use 7.0 in for full width. Include at
+# width=\columnwidth unscaled, else the font sizes above are wrong in print.
+figure.figsize     : 3.375, 2.45
+figure.dpi         : 200
+figure.constrained_layout.use   : True
+figure.constrained_layout.h_pad : 0.02
+figure.constrained_layout.w_pad : 0.02
+figure.constrained_layout.hspace: 0.02
+figure.constrained_layout.wspace: 0.02
+
+savefig.dpi        : 600
+savefig.format     : pdf
+savefig.bbox       : standard
+savefig.transparent: False
+pdf.fonttype       : 42
+ps.fonttype        : 42
+
+axes.linewidth     : 0.7
+axes.grid          : False
+grid.linewidth     : 0.4
+grid.alpha         : 0.5
+axes.axisbelow     : True
+axes.formatter.use_mathtext : True
+axes.formatter.limits       : -3, 4
+axes.labelpad      : 2.5
+
+# Opaque white face so the line does not show through the marker.
+lines.linewidth       : 1.15
+lines.markersize      : 4
+lines.markerfacecolor : white
+lines.markeredgewidth : 1.1
+lines.dash_capstyle   : round
+lines.solid_capstyle  : round
+markers.fillstyle     : full
+
+lines.scale_dashes    : False
+lines.dashed_pattern  : 4, 4
+lines.dashdot_pattern : 5, 2, 1, 2
+lines.dotted_pattern  : 1, 2
+
+errorbar.capsize      : 1.5
+
+xtick.direction     : in
+ytick.direction     : in
+xtick.top           : True
+ytick.right         : True
+
+xtick.major.size    : 3.5
+ytick.major.size    : 3.5
+xtick.major.width   : 0.7
+ytick.major.width   : 0.7
+xtick.major.pad     : 3
+ytick.major.pad     : 3
+
+xtick.minor.visible : True
+ytick.minor.visible : True
+xtick.minor.size    : 2.0
+ytick.minor.size    : 2.0
+xtick.minor.width   : 0.55
+ytick.minor.width   : 0.55
+
+legend.frameon       : False
+legend.handlelength  : 1.6
+legend.handletextpad : 0.4
+legend.labelspacing  : 0.25
+legend.columnspacing : 1.0
+legend.borderaxespad : 0.6
+
+# Floats not hex: red and purple are off the 8-bit grid.
+axes.prop_cycle : cycler('color', [(0.790588, 0.201176, 0.0), (0.192157, 0.388235, 0.807843), (1.0, 0.607843, 0.0), (0.0, 0.596078, 0.109804), (0.567426, 0.32317, 0.729831)]) + cycler('marker', ['o', '^', 'D', 's', 'v'])
+
+image.cmap : viridis

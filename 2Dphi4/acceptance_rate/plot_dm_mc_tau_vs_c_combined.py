@@ -8,7 +8,7 @@ Usage (from 2Dphi4/):
             acceptance_rate/results/dm_mc_tau_vs_c_L128_multiL_k0.26_ep10000_ema.npz \
             acceptance_rate/results/dm_mc_tau_vs_c_L128_multiL_k0.2705_ep10000_ema.npz \
             acceptance_rate/results/dm_mc_tau_vs_c_L128_multiL_k0.28_ep10000_ema.npz \
-        --out ../draft/figures/2Dphi4/dm_mc_tau_vs_c_L128_multi_kappa_ema.pdf
+        --out ../paper/DM/figures/2Dphi4/dm_mc_tau_vs_c_L128_multi_kappa_ema.pdf
 """
 
 import argparse

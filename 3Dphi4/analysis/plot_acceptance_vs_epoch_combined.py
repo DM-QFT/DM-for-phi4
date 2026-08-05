@@ -7,7 +7,7 @@ Usage (from 3Dphi4/):
             analysis/acceptance_vs_epoch_3d_L64_k0.18_sigma2000_ema.npz \
             analysis/acceptance_vs_epoch_3d_L64_k0.1923_sigma2048_ema.npz \
             analysis/acceptance_vs_epoch_3d_L64_k0.2_sigma2760_ema.npz \
-        --out ../draft/figures/3Dphi4/acceptance_vs_epoch_3d_L64_multi_kappa_ema.pdf
+        --out ../paper/DM/figures/3Dphi4/acceptance_vs_epoch_3d_L64_multi_kappa_ema.pdf
 """
 
 import argparse

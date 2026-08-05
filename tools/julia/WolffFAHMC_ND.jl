@@ -442,6 +442,7 @@ function wolff_fahmc(;
     n_windows::Int = 3,
     n_steps::Int = 50,
     n_wolff::Int = 5,
+    n_thin::Int = 1,
     ε0::Float64 = 0.1,
     m2_eff::Float64 = 0.1,
     δ_target::Float64 = 0.75,
@@ -449,6 +450,7 @@ function wolff_fahmc(;
     store_cfgs::Bool = false,
     save_path::String = "",
     metric::Symbol = :fit,
+    phi0 = nothing,
 )
     rng = MersenneTwister(seed)
     N = N_lat
@@ -459,7 +461,7 @@ function wolff_fahmc(;
 
     π_field = Array{Float64}(undef, real_shape)
     φ_old   = Array{Float64}(undef, real_shape)
-    φ       = randn(rng, real_shape)
+    φ       = phi0 === nothing ? randn(rng, real_shape) : Float64.(copy(phi0))
 
     fm = FourierMassMatrix{D}(N, m2_eff)
     wolff_ws = WolffWorkspace{D}(N)
@@ -479,10 +481,11 @@ function wolff_fahmc(;
     Gd = zeros(length(diag_ci))
     n_cal = 0
 
-    n_total = n_warmup + n_samples
+    n_prod = n_samples * n_thin
+    n_total = n_warmup + n_prod
     cfgs_shape = (real_shape..., n_samples)
     cfgs = store_cfgs ? zeros(Float64, cfgs_shape) : nothing
-    abs_mag_series = Vector{Float64}(undef, n_samples)
+    abs_mag_series = Vector{Float64}(undef, n_prod)
 
     save_to_disk = !isempty(save_path)
     jld_file = nothing
@@ -509,7 +512,7 @@ function wolff_fahmc(;
     println("  N=$N ($(D)D, V=$V), κ=$κ, λ=$λ")
     println("  n_steps=$n_steps (HMC leapfrog), n_wolff=$n_wolff (cluster flips/iter)")
     println("  n_warmup=$n_warmup, metric: $metric_desc")
-    println("  n_samples=$n_samples, δ_target=$δ_target")
+    println("  n_samples=$n_samples (thin=$n_thin -> $n_prod production iters), δ_target=$δ_target")
     println("  memory mode: $mem_mode ($mem_est)")
     println("=" ^ 60)
 
@@ -561,11 +564,14 @@ function wolff_fahmc(;
             end
             abs_mag_series[idx] = abs(phi_bar / V)
 
-            if store_cfgs
-                selectdim(cfgs, D + 1, idx) .= φ
-            end
-            if save_to_disk
-                jld_file[@sprintf("cfgs/%06d", idx)] = copy(φ)
+            if idx % n_thin == 0
+                j = idx ÷ n_thin
+                if store_cfgs
+                    selectdim(cfgs, D + 1, j) .= φ
+                end
+                if save_to_disk
+                    jld_file[@sprintf("cfgs/%06d", j)] = copy(φ)
+                end
             end
             if accepted
                 n_accept += 1
@@ -592,7 +598,7 @@ function wolff_fahmc(;
         println("Configs streamed to: $save_path")
     end
 
-    accept_rate = n_accept / n_samples
+    accept_rate = n_accept / n_prod
     avg_cluster_frac = total_wolff_flips > 0 ?
         total_cluster_size / (total_wolff_flips * V) : 0.0
 

@@ -190,6 +190,18 @@ class DiffusionModel(pl.LightningModule):
         elif not ckpt_has_orig and model_has_orig:
             sd = {k.replace('score_model.', 'score_model._orig_mod.', 1): v
                   for k, v in sd.items()}
+
+        # Old ckpts carry dead ResnetBlock skip_conv params (never used in
+        # forward); drop them and their EMA shadows (same registration order).
+        if any('.skip_conv.' in k for k in sd) and \
+                not any('.skip_conv.' in k for k in model_keys):
+            drop = {i for i, k in enumerate(sd) if '.skip_conv.' in k}
+            ema_sd = checkpoint.get('ema_state_dict')
+            if ema_sd is not None:
+                ema_sd['shadow_params'] = [
+                    p for i, p in enumerate(ema_sd['shadow_params'])
+                    if i not in drop]
+            sd = {k: v for k, v in sd.items() if '.skip_conv.' not in k}
         checkpoint['state_dict'] = sd
 
         if 'ema_state_dict' in checkpoint:

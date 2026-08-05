@@ -3,7 +3,7 @@
 # to finish, then generate 512 samples at epoch=20000 with EM/linear/2000 steps
 # for both. On CUDA OOM the per-rep batch is halved while keeping the 512 total
 # (1x512 -> 2x256 -> 4x128 -> 8x64 -> 16x32). Used to populate the DM L=64 rows
-# of Table VI (tab:multiL_HMC_cumulants) in draft/DM.tex.
+# of Table VI (tab:multiL_HMC_cumulants) in paper/DM/DM.tex.
 
 set -u
 

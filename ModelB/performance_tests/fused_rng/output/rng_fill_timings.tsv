@@ -1,5 +1,0 @@
-method	requested	generated	ms
-library_wrapper	20971520	33554432	0.12110118
-library_preallocated_pow2	20971520	33554432	0.068389534
-gpuarrays_public	20971520	20971520	0.053373344
-curand_direct_even	20971520	20971520	0.044189248

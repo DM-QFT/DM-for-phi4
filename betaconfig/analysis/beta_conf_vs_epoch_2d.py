@@ -29,9 +29,9 @@ import torch
 import matplotlib.pyplot as plt
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+ROOT = HERE.parents[1]           # betaconfig/analysis/ -> repo root
 sys.path.append(str(ROOT))
-sys.path.append(str(HERE.parents[1]))
+sys.path.append(str(ROOT / "2Dphi4"))
 
 from diffusion_lightning import DiffusionModel, marginal_prob_std
 from networks import NCSNpp2D
@@ -132,7 +132,7 @@ def main():
 
     # ---- save ----
     summary = np.array(final_summary)            # (n_ep, 5)
-    out_dir = Path("results/beta_conf_traj")
+    out_dir = HERE.parent / "results" / "beta_conf_traj"
     out_dir.mkdir(parents=True, exist_ok=True)
     tag = f"vs_epoch_L{args.L}_k{args.k}_l{args.l}_N{args.num_samples}"
     npz_path = out_dir / f"beta_conf_{tag}.npz"
