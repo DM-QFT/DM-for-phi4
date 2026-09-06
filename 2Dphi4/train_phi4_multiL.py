@@ -90,10 +90,6 @@ def main():
                         "resumes. max-autotune: ~5-10min/shape compile, also "
                         "Triton kernel autotuning — 15-30%% steady-state "
                         "speedup, worth it on long fresh runs (≥10h).")
-    p.add_argument("--l_cond", action="store_true",
-                   help="Enable lattice-size conditioning in NCSNpp2D "
-                        "(adds Gaussian Fourier embedding of 1/L to time "
-                        "embedding). Auto-suffixes the output dir with _lcond.")
     p.add_argument("--output_suffix", type=str, default="")
     args = p.parse_args()
 
@@ -119,8 +115,8 @@ def main():
     marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=args.sigma)
 
     if args.network == "ncsnpp":
-        score_model = NCSNpp2D(marginal_prob_std_fn, l_cond=args.l_cond)
-        print(f"Using NCSNpp2D (periodic BC, l_cond={args.l_cond})")
+        score_model = NCSNpp2D(marginal_prob_std_fn)
+        print("Using NCSNpp2D (periodic BC)")
     elif args.network == "unet":
         score_model = ScoreNetUNetPeriodic(marginal_prob_std_fn)
         print("Using ScoreNetUNetPeriodic")
@@ -153,9 +149,8 @@ def main():
     )
 
     L_tag = "-".join(str(L) for L in L_list)
-    auto_suffix = "_lcond" if args.l_cond else ""
     output_dir = (f"runs/phi4_Lmulti{L_tag}_k{args.k}_l{args.l}_{args.network}"
-                  f"{auto_suffix}{args.output_suffix}")
+                  f"{args.output_suffix}")
     os.makedirs(f"{output_dir}/models", exist_ok=True)
     print(f"Output directory: {output_dir}/")
 

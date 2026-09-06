@@ -1,11 +1,10 @@
 """
 Train a multi-L EDM2-style (MPNCSNpp2D) diffusion model on 2D phi4 lattices.
-Trains jointly on multiple lattice sizes, with l_cond=True so the network
-gets a 1/L embedding for finite-size awareness.
+Trains jointly on multiple lattice sizes with shared convolutional weights.
 
 Usage:
     python train_phi4_multiL_edm2.py --L_list 8,16,32,64 --k 0.28 \
-        --epochs 10000 --batch_size 1024 --device cuda:3 --gpu_data --l_cond
+        --epochs 10000 --batch_size 1024 --device cuda:3 --gpu_data
 """
 
 import sys
@@ -73,15 +72,8 @@ def main():
     p.add_argument("--no_compile", action="store_true")
     p.add_argument("--channels", type=int, nargs="+",
                    default=[16, 32, 64, 128])
-    p.add_argument("--l_cond", action="store_true", default=True,
-                   help="Enable 1/L embedding in MPNCSNpp2D (default on)")
-    p.add_argument("--no_l_cond", action="store_true",
-                   help="Disable l_cond")
     p.add_argument("--output_suffix", type=str, default="")
     args = p.parse_args()
-
-    if args.no_l_cond:
-        args.l_cond = False
 
     L_list = parse_L_list(args.L_list)
     print(f"Training on L_list = {L_list}")
@@ -116,12 +108,10 @@ def main():
     # Build MP NCSNpp2D
     score_network = MPNCSNpp2D(
         channels=tuple(args.channels),
-        l_cond=args.l_cond,
     )
     apply_forced_weight_norm(score_network)
     n_params = sum(p.numel() for p in score_network.parameters())
-    print(f"MPNCSNpp2D: channels={args.channels}  params={n_params/1e6:.2f}M  "
-          f"l_cond={args.l_cond}")
+    print(f"MPNCSNpp2D: channels={args.channels}  params={n_params/1e6:.2f}M")
 
     if not args.no_compile:
         # dynamic=False so torch.compile builds a separate static graph per L
@@ -150,9 +140,8 @@ def main():
     print(f"LR: {args.lr}")
 
     L_tag = "-".join(str(L) for L in L_list)
-    suffix = ("_lcond" if args.l_cond else "") + args.output_suffix
     output_dir = (f"runs/phi4_Lmulti{L_tag}_k{args.k}_l{args.l}_edm2"
-                  f"_sd{args.sigma_data:.3f}{suffix}")
+                  f"_sd{args.sigma_data:.3f}{args.output_suffix}")
     os.makedirs(f"{output_dir}/models", exist_ok=True)
     print(f"Output directory: {output_dir}/")
 

@@ -30,7 +30,7 @@ def main():
     sources = []
     sources.append(("HMC L=128 (N=8192)", "C0", "o", "-", ref))
     for ep, color, marker in [("8554", "C2", "s"), ("10000", "C3", "^")]:
-        f = run / "data_crossL" / f"samples_multiL64_no_lcond_sample128_em_linear_steps2000_ep{ep}_4096.npy"
+        f = run / "data_crossL" / f"samples_multiL64_sample128_em_linear_steps2000_ep{ep}_4096.npy"
         if not f.exists():
             print(f"[WARN] missing {f}")
             continue

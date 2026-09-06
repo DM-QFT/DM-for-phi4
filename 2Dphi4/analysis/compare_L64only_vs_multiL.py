@@ -72,7 +72,7 @@ def main():
 
     # Multi-L
     for ep, color, marker in [("8554", "C2", "s"), ("10000", "C5", "^")]:
-        f = multiL_dir / "data_crossL" / f"samples_multiL64_no_lcond_sample128_em_linear_steps2000_ep{ep}_4096.npy"
+        f = multiL_dir / "data_crossL" / f"samples_multiL64_sample128_em_linear_steps2000_ep{ep}_4096.npy"
         if f.exists():
             sources.append((f"multi-L L=[8,16,32,64] σ=360 ep={ep} (4096)",
                             color, marker, "-", load_dm(f)))

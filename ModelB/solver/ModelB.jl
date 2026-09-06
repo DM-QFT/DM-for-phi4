@@ -148,6 +148,7 @@ function modelB_2d_SDE_prob(
     saveat=1.0f0,
     dt=0.005f0,
     seed=rand(UInt64),
+    alg=SOSRA(),
 )
     γ, T, κ, λ, dt = Float32.((γ, T, κ, λ, dt))
     tspan = Float32.(tspan)
@@ -159,13 +160,6 @@ function modelB_2d_SDE_prob(
             "u0 must have shape (L, L, Nensemble), with L >= 4 and Nensemble > 0",
         ))
     all(isfinite, u) || throw(ArgumentError("u0 must be finite"))
-    all(isfinite, (γ, T, κ, λ, dt, tspan..., saveat)) ||
-        throw(ArgumentError("all physical/time parameters must be finite"))
-    γ > 0.0f0 || throw(ArgumentError("γ must be positive"))
-    T >= 0.0f0 || throw(ArgumentError("T must be nonnegative"))
-    tspan[2] >= tspan[1] || throw(ArgumentError("tspan must run forward"))
-    saveat > 0.0f0 || throw(ArgumentError("saveat must be positive"))
-
     inv_gamma = 1.0f0 / γ
     two_kappa = 2.0f0 * κ
     m02 = 2.0f0 * (1.0f0 - 2.0f0 * λ) - 8.0f0 * κ
@@ -184,11 +178,8 @@ function modelB_2d_SDE_prob(
     function diffusion!(du, u, p, t)
         fill!(du, noise_amplitude)
     end
-
-    dt > 0.0f0 || throw(ArgumentError("dt must be positive"))
     noise = modelb_noise_process(tspan[1], u; seed)
     problem = SDEProblem(drift!, diffusion!, u, tspan, workspace; noise=noise)
-    alg = SOSRA()
     solve(
         problem, alg;
         adaptive=false,

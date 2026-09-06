@@ -1,0 +1,38 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=24:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_quench_mix
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_multiL_quench_tanhgauss.pbs.log
+
+set -euo pipefail
+
+cd /work/gw97/w97000/project/DM/ModelB
+export PATH=/work/gw97/w97000/envs/nenv2/bin:$PATH
+
+echo "Job ID: ${PBS_JOBID}"
+echo "Node: $(hostname)"
+echo "Start: $(date '+%F %T')"
+nvidia-smi -L
+
+PYTHONUNBUFFERED=1 python -u train/train_modelB_cond.py \
+    --L_list 8,16,32,64 \
+    --kappa 0.85 --lam 1.0 --horizon 10 \
+    --sigma 190 --lr 0.001 --batch_size 256 \
+    --epochs 10000 --ema_start 0 --num_ckpts 100 \
+    --device cuda:0 --compile_mode reduce-overhead \
+    --output_suffix _quench_tanhgauss \
+    --cond_paths \
+        trainingdata/modelB_L8_Ne51200_tanhgauss_l1_kappa_0.85_t0_seed2026081308.jld2 \
+        trainingdata/modelB_L16_Ne51200_tanhgauss_l1_kappa_0.85_t0_seed2026081316.jld2 \
+        trainingdata/modelB_L32_Ne51200_tanhgauss_l1_kappa_0.85_t0_seed2026081332.jld2 \
+        trainingdata/modelB_L64_Ne51200_tanhgauss_l1_kappa_0.85_t0_seed2026081364.jld2 \
+    --target_paths \
+        trainingdata/modelB_L8_Ne51200_tanhgauss_l1_kappa_0.85_t10_dt0.002_seed2026081309.jld2 \
+        trainingdata/modelB_L16_Ne51200_tanhgauss_l1_kappa_0.85_t10_dt0.002_seed2026081317.jld2 \
+        trainingdata/modelB_L32_Ne51200_tanhgauss_l1_kappa_0.85_t10_dt0.002_seed2026081333.jld2 \
+        trainingdata/modelB_L64_Ne51200_tanhgauss_l1_kappa_0.85_t10_dt0.002_seed2026081365.jld2
+
+echo "Finish: $(date '+%F %T')"

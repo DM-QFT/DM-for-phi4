@@ -3,7 +3,7 @@
 # Usage:  bash scripts/sample_multiL_edm2.sh <CKPT_PATH>
 # Example:
 #   bash scripts/sample_multiL_edm2.sh \
-#     runs/phi4_Lmulti8-16-32-64_k0.28_l0.022_edm2_sd0.343_lcond/models/epoch=5000.ckpt
+#     runs/phi4_Lmulti8-16-32-64_k0.28_l0.022_edm2_sd0.343/models/epoch=5000.ckpt
 
 set -e
 CKPT="${1:?Usage: $0 <ckpt path>}"

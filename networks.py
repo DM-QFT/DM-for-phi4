@@ -150,8 +150,7 @@ class NCSNpp2D(NCSNppND):
     """NCSN++ style 2D U-Net with ResNet blocks and time conditioning."""
 
     def __init__(self, marginal_prob_std_fn, channels=[16, 32, 64, 128],
-                 embed_dim=256, use_attention=False, periodic=True,
-                 l_cond: bool = False):
+                 embed_dim=256, use_attention=False, periodic=True):
         super().__init__(
             marginal_prob_std_fn,
             spatial_dims=2,
@@ -159,7 +158,6 @@ class NCSNpp2D(NCSNppND):
             embed_dim=embed_dim,
             use_attention=use_attention,
             periodic=periodic,
-            l_cond=l_cond,
         )
 
 

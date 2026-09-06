@@ -1,0 +1,6 @@
+method	backend	precision	L	trajectories	t_final	dt	integrator_steps	drift_nfe	transitions	network_nfe	compile_mode	seconds
+SOSRA (This work)	Julia CUDA.jl	Float32	64	512	100.0	0.00625	16000	48000	1	0	custom kernels	1.303203
+SOSRA (StochasticDiffEq.jl)	Julia StochasticDiffEq.jl	Float32	64	512	100.0	0.00625	16000	48000	1	0	none	12.356031255
+ShARK	Diffrax 0.7.2, JAX 0.11.1	Float32	64	512	100.0	0.004	25000	50000	10	0	jax.jit XLA StepTo	5.559763616
+EM	Diffrax 0.7.2, JAX 0.11.1	Float32	64	512	100.0	0.0004	250000	250000	10	0	jax.jit XLA StepTo	19.451650811
+DPM-Solver-v3	PyTorch	BF16 network, Float32 and Float64 solver	64	512	100.0		0	0	10	320	max-autotune	3.2410446789872367

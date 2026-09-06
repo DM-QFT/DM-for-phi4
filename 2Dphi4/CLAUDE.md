@@ -44,4 +44,4 @@ Under `julia/` (analysis/utility, run from `2Dphi4/` as `julia julia/<file>.jl`)
   - `sigma_ablation/{all,L32,L32_k26,L32_k2705,L32_compare}/` — σ-ablation logs and figures (formerly `sigma_ablation*_logs/`)
   - `sigma_comparison_L128/` — L=128 sweep diagnostics + propagator caches (committed)
 - `trainingdata/` — Julia-generated .jld2 training data (gitignored, ~26 GB)
-- `runs/` — All training output directories (gitignored). Each is `runs/phi4_L{L}_k{k}_l{λ}_ncsnpp[_sigma{σ}]/` with `models/`, `data/`, and TensorBoard `lightning_logs/`. Multi-L runs: `runs/phi4_Lmulti{Ls}_k{k}_l{λ}_ncsnpp[_lcond]/`. Train/sample/analysis scripts hardcode the `runs/` prefix.
+- `runs/` — All training output directories (gitignored). Each is `runs/phi4_L{L}_k{k}_l{λ}_ncsnpp[_sigma{σ}]/` with `models/`, `data/`, and TensorBoard `lightning_logs/`. Multi-L runs use `runs/phi4_Lmulti{Ls}_k{k}_l{λ}_ncsnpp/`. Train/sample/analysis scripts hardcode the `runs/` prefix.

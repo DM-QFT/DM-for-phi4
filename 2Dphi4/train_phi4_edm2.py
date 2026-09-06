@@ -73,7 +73,6 @@ def main():
     p.add_argument("--channels", type=int, nargs="+",
                    default=[16, 32, 64, 128])
     p.add_argument("--use_attention", action="store_true")
-    p.add_argument("--l_cond", action="store_true")
     # Ablation flags
     p.add_argument("--use_bias", action="store_true",
                    help="Re-introduce bias to MP conv/linear (ablation)")
@@ -102,7 +101,6 @@ def main():
     score_network = MPNCSNpp2D(
         channels=tuple(args.channels),
         use_attention=args.use_attention,
-        l_cond=args.l_cond,
         use_bias=args.use_bias,
         use_mp_silu=not args.no_mp_silu,
         use_mp_sum=not args.no_mp_sum,
@@ -111,7 +109,7 @@ def main():
     apply_forced_weight_norm(score_network)
     n_params = sum(p.numel() for p in score_network.parameters())
     print(f"MPNCSNpp2D: channels={args.channels}  params={n_params/1e6:.2f}M  "
-          f"l_cond={args.l_cond}  attention={args.use_attention}")
+          f"attention={args.use_attention}")
 
     if not args.no_compile:
         score_network = torch.compile(score_network, mode="reduce-overhead")

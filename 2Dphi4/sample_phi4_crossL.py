@@ -98,18 +98,14 @@ def main():
     norm_min = h.get("norm_min", -4.0)
     norm_max = h.get("norm_max",  4.0)
     L_train_ckpt = h.get("L", args.L_train)
-    # Auto-detect l_cond from state_dict (l_cond flag not stored in hparams,
-    # but the L_embed submodule is when training used --l_cond).
-    sd = ckpt.get("state_dict", {})
-    l_cond_detected = any("L_embed" in k for k in sd.keys())
     print(f"hparams: sigma={sigma}  norm=[{norm_min:.4f},{norm_max:.4f}]  "
-          f"L_train(ckpt)={L_train_ckpt}  l_cond={l_cond_detected}")
+          f"L_train(ckpt)={L_train_ckpt}")
     print(f"Sampling at L={args.L_sample}  (cross-L, network is fully convolutional)")
 
     # Build model and load weights
     marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=sigma)
     if args.network == "ncsnpp":
-        score_model = NCSNpp2D(marginal_prob_std_fn, l_cond=l_cond_detected)
+        score_model = NCSNpp2D(marginal_prob_std_fn)
     elif args.network == "scorenet":
         score_model = ScoreNet(marginal_prob_std_fn, periodic=True)
     else:

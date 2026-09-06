@@ -1,0 +1,39 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=02:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_ncsnpp_dpmv3_32
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_ncsnpp_dpmv3_32_generate.pbs.log
+
+set -euo pipefail
+
+cd /work/gw97/w97000/project/DM/ModelB
+export PATH=/work/gw97/w97000/envs/nenv2/bin:$PATH
+export MPLBACKEND=Agg
+export OMP_NUM_THREADS=8
+
+echo "Job ID ${PBS_JOBID}"
+echo "Node $(hostname)"
+echo "Start $(date '+%F %T')"
+module list
+nvidia-smi -L
+
+PYTHONUNBUFFERED=1 python -u edm2/ncsnpp_dpm_solver_v3.py
+
+echo "Generation finished $(date '+%F %T')"
+echo "Redrawing reverse NFE figure"
+
+PYTHONUNBUFFERED=1 python -u - <<'PY'
+from analysis.dm_vs_sosra.plots_prl import plot_reverse_nfe_tau
+
+plot_reverse_nfe_tau()
+PY
+
+cp \
+  results/multiL/analysis/dm_vs_sosra/prl/reverse_nfe_tau_L64.pdf \
+  draft/figures/reverse_nfe_tau_L64.pdf
+
+echo "Figure updated $(date '+%F %T')"
+echo "Finish $(date '+%F %T')"

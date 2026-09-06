@@ -278,11 +278,10 @@ class NCSNppND(nn.Module):
 
     def __init__(self, marginal_prob_std_fn, spatial_dims: int,
                  channels=[16, 32, 64, 128], embed_dim=256,
-                 use_attention=False, periodic=True, l_cond: bool = False):
+                 use_attention=False, periodic=True):
         super().__init__()
         self.marginal_prob_std = marginal_prob_std_fn
         self.spatial_dims = spatial_dims
-        self.l_cond = l_cond
         conv = _conv_nd(spatial_dims)
         pad_mode = "circular" if periodic else "zeros"
 
@@ -290,15 +289,6 @@ class NCSNppND(nn.Module):
             GaussianFourierProjection(embed_dim=embed_dim),
             nn.Linear(embed_dim, embed_dim),
         )
-        # Optional lattice-size conditioning. Adds a Gaussian-Fourier embedding
-        # of 1/L (read off the input shape at forward time) to the time
-        # embedding. Lets a single set of weights specialise per L when
-        # trained on multiple lattice sizes.
-        if l_cond:
-            self.L_embed = nn.Sequential(
-                GaussianFourierProjection(embed_dim=embed_dim),
-                nn.Linear(embed_dim, embed_dim),
-            )
 
         self.conv_in = conv(1, channels[0], 3, padding=1,
                             padding_mode=pad_mode)
@@ -366,11 +356,7 @@ class NCSNppND(nn.Module):
                              padding_mode=pad_mode)
 
     def forward(self, x, t):
-        if self.l_cond:
-            L_inv = torch.full_like(t, 1.0 / x.shape[-1])
-            temb = F.silu(self.embed(t) + self.L_embed(L_inv))
-        else:
-            temb = F.silu(self.embed(t))
+        temb = F.silu(self.embed(t))
 
         h = self.conv_in(x)
         h1a = self.res1a(h, temb)

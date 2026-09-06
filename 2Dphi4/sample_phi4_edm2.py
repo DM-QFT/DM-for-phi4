@@ -101,12 +101,7 @@ def main():
     print(f"L={L}, sigma_data={sigma_data}, sigma_min={sigma_min}, sigma_max={sigma_max}")
     print(f"norm: [{norm_min}, {norm_max}]")
 
-    # Auto-detect l_cond from ckpt state_dict (presence of L_fourier params)
     ckpt_sd = ckpt.get("state_dict", {})
-    has_lcond = any("L_fourier" in k or "L_lin" in k or "L_embed" in k
-                    for k in ckpt_sd.keys())
-    if has_lcond:
-        print("[multi-L ckpt detected] enabling l_cond=True in MPNCSNpp2D")
     # Auto-detect use_bias: presence of conv_in.bias is a strong signal
     has_bias_auto = any("conv_in.bias" in k for k in ckpt_sd.keys())
     use_bias = args.use_bias or has_bias_auto
@@ -118,7 +113,7 @@ def main():
         print("[ablation] use_mp_sum=False (plain + residual)")
     # Build EDM2 MP network with ablation-matched config
     score_network = MPNCSNpp2D(
-        channels=(16, 32, 64, 128), l_cond=has_lcond,
+        channels=(16, 32, 64, 128),
         use_bias=use_bias,
         use_mp_silu=not args.no_mp_silu,
         use_mp_sum=not args.no_mp_sum,

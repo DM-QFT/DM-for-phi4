@@ -6,7 +6,7 @@ L, Nensemble = 32, 51200
 κ, λ, γ, T, dt, horizon = 0.340340f0, 1.0f0, 1.0f0, 1.0f0, 0.002f0, 10.0f0
 initial_seed, noise_seed = UInt64(2026073001), UInt64(2026073002)
 Z_range, m2_range, M_range = (0.5f0, 1.5f0), (0.0f0, 0.8f0), (-0.9f0, 0.9f0)
-dir = normpath(joinpath(@__DIR__, "..", "training_data"))
+dir = normpath(joinpath(@__DIR__, "..", "trainingdata"))
 condition = joinpath(
     dir, "modelB_L32_Ne51200_corrgauss_l1_kappa_0.340340_t0_seed2026073001.jld2",
 )

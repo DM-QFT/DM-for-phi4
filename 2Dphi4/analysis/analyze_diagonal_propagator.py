@@ -91,7 +91,7 @@ def main():
     for sched, color, marker in [("log",   "C3", "s"),
                                   ("linear","C2", "^")]:
         for steps, ls in [(2000, "-"), (4000, "--")]:
-            tag = (f"multiL64_no_lcond_sample{L}_em_{sched}_steps{steps}_ep{args.ep}")
+            tag = f"multiL64_sample{L}_em_{sched}_steps{steps}_ep{args.ep}"
             f = run_dir / "data_crossL" / f"samples_{tag}.npy"
             if f.exists():
                 d = load_dm(f)

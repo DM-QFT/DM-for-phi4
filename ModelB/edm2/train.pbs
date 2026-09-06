@@ -1,0 +1,27 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=12:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_edm_ncsnpp_10k
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_edm_ncsnpp_ep10000_train.pbs.log
+
+set -euo pipefail
+
+cd /work/gw97/w97000/project/DM/ModelB
+export PATH=/work/gw97/w97000/envs/nenv2/bin:$PATH
+
+echo "Job ID ${PBS_JOBID}"
+echo "Node $(hostname)"
+echo "Start $(date '+%F %T')"
+module list
+nvidia-smi -L
+
+PYTHONUNBUFFERED=1 python -u edm2/train.py
+
+echo "Training finished $(date '+%F %T')"
+echo "Grid fit and generation started $(date '+%F %T')"
+PYTHONUNBUFFERED=1 python -u edm2/dpmpp2m.py
+
+echo "Finish $(date '+%F %T')"

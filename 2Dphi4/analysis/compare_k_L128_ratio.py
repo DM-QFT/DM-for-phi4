@@ -58,7 +58,7 @@ def main():
     # κ=0.2705 (LOG schedule, ep=10000) — pick the file we already have
     hmc_2705 = load_hmc(Path("trainingdata/cfgs_wolff_fahmc_k=0.2705_l=0.022_128^2.jld2"))[:8192]
     dm_2705 = load_dm(Path("runs/phi4_Lmulti8-16-32-64_k0.2705_l0.022_ncsnpp/data_crossL/"
-                           "samples_multiL64_no_lcond_sample128_em_log_steps2000_ep10000.npy"))
+                           "samples_multiL64_sample128_em_log_steps2000_ep10000.npy"))
 
     # κ=0.27088
     hmc_27088 = load_hmc(Path("trainingdata/cfgs_wolff_fahmc_k=0.27088_l=0.022_128^2.jld2"))[:8192]

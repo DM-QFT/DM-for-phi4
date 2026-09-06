@@ -1,0 +1,56 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=12:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_edm_t0p5_10k
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_edm_ncsnpp_t0p5_ep10000_train.pbs.log
+
+set -euo pipefail
+
+cd /work/gw97/w97000/project/DM/ModelB
+export PATH=/work/gw97/w97000/envs/nenv2/bin:$PATH
+
+echo "Job ID ${PBS_JOBID}"
+echo "Node $(hostname)"
+echo "Start $(date '+%F %T')"
+module list
+nvidia-smi -L
+
+PYTHONUNBUFFERED=1 python -u - <<'PY'
+from edm2 import train
+
+run = (
+    train.MODEL_B
+    / "runs/modelBcond_Lmulti8-16-32_k0.34034_l1.0_t0.5_"
+    "edm_ncsnpp_fahmc_noskip"
+)
+targets = [
+    train.DATA / "modelB_L8_Ne51200_hmc_l1_kappa_0.340340_t0p5_dt0.002_seed2026080602.jld2",
+    train.DATA / "modelB_L16_Ne51200_hmc_l1_kappa_0.340340_t0p5_dt0.002_seed2026080502.jld2",
+    train.DATA / "modelB_L32_Ne51200_hmc_l1_kappa_0.340340_t0p5_dt0.002_seed2026080102.jld2",
+]
+train.main(
+    run_dir=run,
+    cond_paths=train.COND_PATHS,
+    target_paths=targets,
+    horizon=0.5,
+)
+PY
+
+echo "Training finished $(date '+%F %T')"
+echo "Grid fit and generation started $(date '+%F %T')"
+
+PYTHONUNBUFFERED=1 python -u - <<'PY'
+from edm2 import dpmpp2m
+
+run = (
+    dpmpp2m.MODEL_B
+    / "runs/modelBcond_Lmulti8-16-32_k0.34034_l1.0_t0.5_"
+    "edm_ncsnpp_fahmc_noskip"
+)
+dpmpp2m.main(run=run, target_time=50.0, seed=2026082500)
+PY
+
+echo "Finish $(date '+%F %T')"

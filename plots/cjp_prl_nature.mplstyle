@@ -1,0 +1,91 @@
+# PRL-first scientific figure style with Nature-inspired accessibility.
+# Designed for final-size APS single-column figures (3.375 in) and full-width figures (7.0 in).
+
+# Typography: keep the manuscript-compatible serif look for PRL.
+text.usetex        : False
+font.family        : serif
+font.serif         : cmr10, DejaVu Serif
+mathtext.fontset   : cm
+axes.unicode_minus : False
+
+# No titles (set_title/suptitle): put such info inside the plot frame via ax.text.
+font.size          : 10.5
+axes.labelsize     : 10.5
+xtick.labelsize    : 9.5
+ytick.labelsize    : 9.5
+legend.fontsize    : 9.5
+
+# 3.375 * 0.75 aspect
+figure.figsize     : 3.375, 2.531
+figure.dpi         : 200
+figure.constrained_layout.use    : True
+figure.constrained_layout.h_pad  : 0.025
+figure.constrained_layout.w_pad  : 0.025
+figure.constrained_layout.hspace : 0.025
+figure.constrained_layout.wspace : 0.025
+
+savefig.dpi         : 600
+savefig.format      : pdf
+savefig.bbox        : standard
+savefig.transparent : False
+pdf.fonttype        : 42
+ps.fonttype         : 42
+
+axes.linewidth              : 0.7
+axes.grid                   : False
+axes.axisbelow              : True
+axes.formatter.use_mathtext : True
+axes.formatter.limits       : -3, 4
+axes.labelpad               : 2.5
+
+lines.linewidth       : 1.2
+lines.markersize      : 4.0
+lines.markerfacecolor : none
+lines.markeredgewidth : 1.0
+lines.dash_capstyle   : round
+lines.solid_capstyle  : round
+markers.fillstyle     : none
+
+lines.scale_dashes    : False
+lines.dashed_pattern  : 4, 3
+lines.dashdot_pattern : 5, 2, 1, 2
+lines.dotted_pattern  : 1, 2
+
+errorbar.capsize      : 1.5
+
+xtick.direction     : in
+ytick.direction     : in
+xtick.top           : True
+ytick.right         : True
+xtick.major.size    : 3.5
+ytick.major.size    : 3.5
+xtick.major.width   : 0.7
+ytick.major.width   : 0.7
+xtick.major.pad     : 3
+ytick.major.pad     : 3
+xtick.minor.visible : True
+ytick.minor.visible : True
+xtick.minor.size    : 2.0
+ytick.minor.size    : 2.0
+xtick.minor.width   : 0.55
+ytick.minor.width   : 0.55
+
+legend.frameon       : False
+legend.handlelength  : 1.6
+legend.handletextpad : 0.4
+legend.labelspacing  : 0.25
+legend.columnspacing : 0.9
+legend.borderaxespad : 0.45
+legend.markerscale   : 0.9
+
+# Accessible qualitative cycle. For the Model-B paper use the same color for
+# the same physical quantity/mode in every figure and distinguish methods by
+# line/marker style rather than by color whenever possible.
+# n=1 vermillion, n=2 blue, n=3 reddish purple, n=4 bluish green,
+# then orange and sky blue for additional categories.
+# Matplotlib's style parser treats ``#`` as a comment marker even inside a
+# quoted cycler value, so use the exact RGB equivalents of the hex colors.
+axes.prop_cycle : cycler('color', [(0.835294, 0.368627, 0.0), (0.0, 0.447059, 0.698039), (0.8, 0.474510, 0.654902), (0.0, 0.619608, 0.450980), (0.901961, 0.623529, 0.0), (0.337255, 0.705882, 0.913725)]) + cycler('marker', ['o', 's', 'D', '^', 'v', 'P'])
+
+# Ordered quantities such as physical time should use a sequential map.
+image.cmap : viridis

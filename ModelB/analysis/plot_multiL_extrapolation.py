@@ -3,7 +3,6 @@
 from pathlib import Path
 import csv
 
-import h5py
 import matplotlib
 
 matplotlib.use("Agg")
@@ -11,20 +10,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from diagonal_modes import (
+    load_fields as shared_load_fields,
+    load_series,
+    series_index,
     diagonal_fft,
     mode_layout,
-    paired_jackknife_sem,
     power,
     statistics,
 )
 
 
+plt.style.use(Path(__file__).resolve().parents[2] / "plots" / "cjp.mplstyles")
+
 ROOT = Path(__file__).resolve().parent.parent
-RUN = ROOT / "runs/multiL_ep10000_extrapolation"
-OLD = ROOT / "runs/multiL_ep10000_reverse_analysis"
+RUN = ROOT / "results/multiL"
 OUTPUT = RUN / "analysis"
 N = 512
-LS = (32, 64)
+LS = (32, 64, 128)
 COLORS = {
     "modelb_t10": "black", "modelb_t0p5": "black",
     "t10": "#1f77b4", "t0p5": "#d62728",
@@ -36,13 +38,26 @@ LABELS = {
 }
 
 
-def number_tag(value):
-    return f"{value:g}".replace(".", "p")
+MODES_SHOWN = 4          # n>=5 的 rho 在 Δt~2 已落到噪声，画出来只是左边缘一撮点
+MIN_ORIGINS = 30         # 时间原点数掉到这个以下，rho 的误差棒已不可信
+
+
+def leading_run(ok):
+    """从第一个点起连续显著的一段；避免远处噪声偶然过判据留下孤立点。"""
+    keep = np.zeros_like(ok)
+    for i, good in enumerate(ok):
+        if not good:
+            break
+        keep[i] = True
+    return keep
 
 
 def initial_path(lattice):
     if lattice == 32:
-        return RUN / "hmc_L32_N512_t0.npz"
+        # 合并后的 2048 初态；本脚本仍只用前 N=512（与 SOSRA 参考同初态）
+        return RUN / "hmc_L32_N2048_t0.npz"
+    if lattice == 128:
+        return RUN / "hmc_L128_N512_t0.npz"
     return (
         ROOT
         / "runs/modelBcond_L32_k0.34034_l1.0_t10_ncsnpp_hmc_noskip"
@@ -50,60 +65,17 @@ def initial_path(lattice):
     )
 
 
-def dm_t10_path(lattice, time):
-    if time == 0:
-        return initial_path(lattice)
-    if lattice == 32:
-        seed = 2026081100 + time // 10
-        directory = RUN / "t10/L32"
-    elif time <= 200:
-        seed = 2026080800 + time // 10
-        directory = OLD / "samples/t10/mixed_L64_chain_t200"
-    else:
-        seed = 2026081201 + (time - 210) // 10
-        directory = RUN / "t10/L64_t210_t1000"
-    return directory / (
-        f"chain_ep10000_t{time}_via_iterated_t10dm512_steps2000_log_seed{seed}.npz"
-    )
-
-
-def dm_t0p5_path(lattice, index):
-    if index == 0:
-        return initial_path(lattice)
-    time = 0.5 * index
-    seed = (2026082100 if lattice == 32 else 2026082200) + index
-    return RUN / f"t0p5/L{lattice}" / (
-        f"chain_ep10000_t{number_tag(time)}_via_iterated_t0p5dm512_"
-        f"steps2000_log_seed{seed}.npz"
-    )
-
-
-def modelb_path(lattice, time):
-    if time == 0:
-        return initial_path(lattice)
-    seed = 2026085101 if lattice == 32 else 2026085201
-    return (
-        RUN / f"modelb_reference/L{lattice}"
-        / f"modelB_L{lattice}_Ne512_hmc_t{number_tag(time)}_"
-          f"chain_dt0.002_seed{seed}.jld2"
-    )
-
-
-def load_fields(path):
-    if path.suffix == ".npz":
-        with np.load(path, allow_pickle=False) as archive:
-            return np.asarray(archive["phi_gen"][:N], dtype=np.float32)
-    with h5py.File(path, "r") as handle:
-        fields = np.asarray(handle["cfgs"][:N], dtype=np.float32)
-    return fields.swapaxes(1, 2)
-
-
-def load_modes(paths, ky, kx, label):
+def load_modes(series, times, initial, ky, kx, label):
+    """t=0 不在序列里，用初态文件补上。"""
+    series_times, fields = series
     result = []
-    for i, path in enumerate(paths):
+    for i, t in enumerate(times):
         if i % 20 == 0:
-            print(f"{label}: {i}/{len(paths) - 1}", flush=True)
-        result.append(diagonal_fft(load_fields(path), ky, kx))
+            print(f"{label}: {i}/{len(times) - 1}", flush=True)
+        block = (shared_load_fields(initial, count=N) if t == 0
+                 else np.asarray(fields[series_index(series_times, t), :N],
+                                 dtype=np.float32))
+        result.append(diagonal_fft(block, ky, kx))
     return np.stack(result)
 
 
@@ -134,11 +106,12 @@ def analyze_lattice(lattice):
     mode_n, ky, kx, _, khat, _ = mode_layout(lattice)
     t10_times = np.arange(0, 1001, 10)
     t05_times = np.arange(0, 50.5, 0.5)
-    paths = {
-        "t10": [dm_t10_path(lattice, int(t)) for t in t10_times],
-        "t0p5": [dm_t0p5_path(lattice, i) for i in range(len(t05_times))],
-        "modelb_t10": [modelb_path(lattice, int(t)) for t in t10_times],
-        "modelb_t0p5": [modelb_path(lattice, t) for t in t05_times],
+    modelb = load_series(ROOT / f"results/modelb_reference/multiL_L{lattice}.h5")
+    series = {
+        "t10": load_series(RUN / f"t10_L{lattice}.h5"),
+        "t0p5": load_series(RUN / f"t0p5_L{lattice}.h5"),
+        "modelb_t10": modelb,
+        "modelb_t0p5": modelb,
     }
     times = {
         "t10": t10_times, "t0p5": t05_times,
@@ -146,151 +119,127 @@ def analyze_lattice(lattice):
     }
     result = {"mode_n": mode_n, "khat": khat, "times": times}
     for name in ("t10", "t0p5", "modelb_t10", "modelb_t0p5"):
-        modes = load_modes(paths[name], ky, kx, f"L{lattice} {name}")
+        modes = load_modes(series[name], times[name], initial_path(lattice),
+                           ky, kx, f"L{lattice} {name}")
         result[name] = lag_statistics(modes, lattice * lattice)
     return result
 
 
-def mode_grid(data):
-    ncols = 4
-    nrows = len(data["mode_n"]) // ncols
-    figure, axes = plt.subplots(
-        nrows, ncols, figsize=(13, 2.55 * nrows + 0.7),
-        sharex=True, constrained_layout=True,
-    )
-    return figure, axes.reshape(-1), ncols
-
-
-def set_correlation_ylim(axis, curves):
-    lower = min(np.min(values - errors) for values, errors in curves)
-    upper = max(np.max(values + errors) for values, errors in curves)
-    span = max(upper - lower, 0.02)
-    axis.set_ylim(min(lower - 0.08 * span, -0.005),
-                  max(upper + 0.08 * span, 0.005))
-
-
 def plot_short(results):
+    """单栏单联：对数纵轴把各模的指数衰减拉直，k 依赖一目了然。
+
+    Model B 画线，DM 画点（实心 δt=10、空心 δt=0.5）。三者重叠即为符合；
+    符合精度（绝对偏差 <=0.03，1--2 sigma）写正文，不占图面。
+    """
     for lattice in LS:
         data = results[lattice]
-        figure, axes, ncols = mode_grid(data)
-        for mode, axis in enumerate(axes):
-            curves = []
-            for name, marker, indices in (
-                ("modelb_t0p5", "o", slice(1, None)),
-                ("t10", "s", slice(1, 6)),
-                ("t0p5", "x", slice(1, None)),
+        colors = plt.cm.viridis(np.linspace(0.08, 0.8, MODES_SHOWN))
+        figure, axis = plt.subplots(figsize=(3.375, 2.6))
+        series = (
+            ("modelb_t0p5", dict(ls="-", lw=0.9, marker="")),
+            ("t0p5", dict(ls="none", marker="o", ms=2.4, mfc="none", mew=0.6)),
+            ("t10", dict(ls="none", marker="s", ms=2.9, mew=0.6)),
+        )
+        for mode in range(MODES_SHOWN):
+            # 三个序列的时间网格不同，各自的可信上限也不同；取共同上限，
+            # 否则稀疏序列会在参照线消失之后继续画出孤立点
+            limits = []
+            for name, _ in series:
+                times = np.asarray(data["times"][name])
+                rho, sem, _ = data[name]
+                n_origins = len(times) - np.arange(len(times))
+                ok = ((times > 0) & (times <= 50)
+                      & (rho[:, mode] > 5 * sem[:, mode])
+                      & (n_origins >= MIN_ORIGINS))
+                run = leading_run(ok[times > 0])
+                limits.append(times[times > 0][run][-1] if run.any() else 0.0)
+            t_max = min(limits)
+            for name, style in series:
+                times = np.asarray(data["times"][name])
+                rho, _, _ = data[name]
+                keep = (times > 0) & (times <= t_max)
+                axis.plot(times[keep], rho[keep, mode], color=colors[mode], **style)
+        axis.set_yscale("log")
+        axis.set(xlim=(0, 50), ylim=(2e-2, 1.6),
+                 xlabel=r"$\Delta t$", ylabel=r"$\rho_n(\Delta t)$")
+        mode_handles = [
+            plt.Line2D([], [], color=colors[m], lw=1.4, marker="",
+                       label=fr"${data['mode_n'][m]}$  ({data['khat'][m]:.2f})")
+            for m in range(MODES_SHOWN)
+        ]
+        axis.legend(handles=mode_handles, title=r"$n$  ($\hat k$)", loc="lower right",
+                    fontsize=6, title_fontsize=6, handlelength=1.1,
+                    labelspacing=0.15, borderaxespad=0.4)
+        handles = [
+            plt.Line2D([], [], color="0.3", ls="-", lw=0.9, marker="", label="Model B"),
+            plt.Line2D([], [], color="0.3", ls="none", marker="s", ms=2.9, label=r"DM $\delta t=10$"),
+            plt.Line2D([], [], color="0.3", ls="none", marker="o", ms=2.4,
+                       mfc="none", mew=0.6, label=r"DM $\delta t=0.5$"),
+        ]
+        figure.legend(handles=handles, loc="outside upper center", ncol=3,
+                      title=fr"$L={lattice}$, $\kappa=0.34034$, $\lambda=1$")
+        figure.savefig(OUTPUT / f"rho_L{lattice}_short.pdf")
+        plt.close(figure)
+
+
+def reliable_run(times, rho, sem, mode, t_hi):
+    """从首点起连续满足 5 sigma 且时间原点足够的一段。"""
+    n_origins = len(times) - np.arange(len(times))
+    ok = ((times > 0) & (times <= t_hi) & (rho[:, mode] > 5 * sem[:, mode])
+          & (n_origins >= MIN_ORIGINS))
+    keep = np.zeros(len(times), dtype=bool)
+    for i, good in enumerate(ok):
+        if times[i] <= 0:
+            continue
+        if not good:
+            break
+        keep[i] = True
+    return keep
+
+
+def plot_loglog(results):
+    """线性 Δt、对数 rho，量程到 1000：指数衰减在此是直线。
+
+    delta t=0.5 与 delta t=10 两套网格拼起来覆盖 Δt=0.5..1000。高模的
+    tau 只有 O(1)，在这个横轴上必然挤在左端；标度坍缩和 Gamma_eff
+    分析在 dm_vs_sosra 管线里（N=2048、bootstrap 误差）。
+    """
+    for lattice in LS:
+        data = results[lattice]
+        colors = plt.cm.viridis(np.linspace(0.08, 0.8, MODES_SHOWN))
+        figure, axis = plt.subplots(figsize=(3.375, 2.7))
+        for mode in range(MODES_SHOWN):
+            for name, style in (
+                ("modelb_t0p5", dict(ls="-", lw=0.9, marker="")),
+                ("modelb_t10", dict(ls="-", lw=0.9, marker="")),
+                ("t0p5", dict(ls="none", marker="o", ms=2.4, mfc="none", mew=0.6)),
+                ("t10", dict(ls="none", marker="s", ms=2.9, mew=0.6)),
             ):
-                times = data["times"][name][indices]
+                times = np.asarray(data["times"][name], dtype=float)
                 rho, sem, _ = data[name]
-                axis.errorbar(
-                    times, rho[indices, mode], yerr=sem[indices, mode],
-                    color=COLORS[name], marker=marker,
-                    ms=2.4 if name != "t10" else 3.4,
-                    lw=0.8, elinewidth=0.35,
-                    capsize=0 if name != "t10" else 1.5,
-                    label=LABELS[name],
-                )
-                curves.append((rho[indices, mode], sem[indices, mode]))
-            set_correlation_ylim(axis, curves)
-            axis.set_title(
-                fr"$n={data['mode_n'][mode]}$, $\hat k={data['khat'][mode]:.3f}$"
-            )
-            axis.set_xlim(0, 50)
-            axis.axhline(0, color="black", lw=0.5)
-            axis.grid(alpha=0.2)
-            if mode // ncols == len(axes) // ncols - 1:
-                axis.set_xlabel(r"$\Delta t$")
-            if mode % ncols == 0:
-                axis.set_ylabel(r"$\rho_n(\Delta t)$")
-        handles, labels = axes[0].get_legend_handles_labels()
-        figure.legend(
-            handles, labels, loc="outside upper center", ncol=3,
-            title=fr"L={lattice}; every $\delta t=0.5$ point is shown",
-        )
-        figure.savefig(
-            OUTPUT / f"rho_L{lattice}_dt0p5_vs_dt10_short_all_modes.pdf",
-            bbox_inches="tight",
-        )
-        plt.close(figure)
-
-
-def plot_short_difference(results):
-    for lattice in LS:
-        data = results[lattice]
-        figure, axes, ncols = mode_grid(data)
-        modelb_rho, _, modelb_leaves = data["modelb_t0p5"]
-        for mode, axis in enumerate(axes):
-            for name, marker in (("t10", "s"), ("t0p5", "x")):
-                rho, _, leaves = data[name]
-                if name == "t10":
-                    indices = np.arange(1, 6)
-                    modelb_indices = np.arange(20, 101, 20)
-                else:
-                    indices = np.arange(1, 101)
-                    modelb_indices = indices
-                times = data["times"][name][indices]
-                difference = rho[indices, mode] - modelb_rho[modelb_indices, mode]
-                error = np.array([
-                    paired_jackknife_sem(leaves[i], modelb_leaves[j])[mode]
-                    for i, j in zip(indices, modelb_indices)
-                ])
-                axis.errorbar(
-                    times, difference, yerr=error, color=COLORS[name],
-                    marker=marker, ms=2.5 if name == "t0p5" else 3.5,
-                    lw=0.8, elinewidth=0.35,
-                    capsize=0 if name == "t0p5" else 1.7,
-                    label=LABELS[name],
-                )
-            axis.axhline(0, color="black", lw=0.6)
-            axis.set_title(fr"$n={data['mode_n'][mode]}$")
-            axis.set_xlim(0, 50)
-            axis.grid(alpha=0.2)
-            if mode // ncols == len(axes) // ncols - 1:
-                axis.set_xlabel(r"$\Delta t$")
-            if mode % ncols == 0:
-                axis.set_ylabel(r"$\rho_n^{\rm DM}-\rho_n^{\rm Model\ B}$")
-        handles, labels = axes[0].get_legend_handles_labels()
-        figure.legend(handles, labels, loc="outside upper center", ncol=2,
-                      title=f"L={lattice}")
-        figure.savefig(
-            OUTPUT / f"rho_L{lattice}_short_difference_all_modes.pdf",
-            bbox_inches="tight",
-        )
-        plt.close(figure)
-
-
-def plot_long(results):
-    for lattice in LS:
-        data = results[lattice]
-        figure, axes, ncols = mode_grid(data)
-        for mode, axis in enumerate(axes):
-            curves = []
-            for name, marker in (("modelb_t10", "o"), ("t10", "x")):
-                times = data["times"][name][1:]
-                rho, sem, _ = data[name]
-                axis.errorbar(
-                    times, rho[1:, mode], yerr=sem[1:, mode],
-                    color=COLORS[name], marker=marker,
-                    ms=2.3,
-                    lw=1, elinewidth=0.35, capsize=0, label=LABELS[name],
-                )
-                curves.append((rho[1:, mode], sem[1:, mode]))
-            set_correlation_ylim(axis, curves)
-            axis.axhline(0, color="black", lw=0.5)
-            axis.set_title(fr"$n={data['mode_n'][mode]}$")
-            axis.set_xlim(0, 1000)
-            axis.grid(alpha=0.2)
-            if mode // ncols == len(axes) // ncols - 1:
-                axis.set_xlabel(r"$\Delta t$")
-            if mode % ncols == 0:
-                axis.set_ylabel(r"$\rho_n(\Delta t)$")
-        handles, labels = axes[0].get_legend_handles_labels()
-        figure.legend(handles, labels, loc="outside upper center", ncol=2,
-                      title=f"L={lattice}")
-        figure.savefig(
-            OUTPUT / f"rho_L{lattice}_dt10_to_t1000_all_modes.pdf",
-            bbox_inches="tight",
-        )
+                keep = reliable_run(times, rho, sem, mode, 1000.0)
+                if keep.sum() < 3:      # 孤立一两点无从判读，不画
+                    continue
+                axis.plot(times[keep], rho[keep, mode], color=colors[mode], **style)
+        axis.set(yscale="log", xlim=(0, 1000), ylim=(1e-2, 1.8),
+                 xlabel=r"$\Delta t$", ylabel=r"$\rho_n(\Delta t)$")
+        mode_handles = [
+            plt.Line2D([], [], color=colors[m], lw=1.4, marker="",
+                       label=fr"${data['mode_n'][m]}$  ({data['khat'][m]:.2f})")
+            for m in range(MODES_SHOWN)
+        ]
+        axis.legend(handles=mode_handles, title=r"$n$  ($\hat k$)", loc="lower left",
+                    fontsize=6, title_fontsize=6, handlelength=1.1,
+                    labelspacing=0.15, borderaxespad=0.4)
+        handles = [
+            plt.Line2D([], [], color="0.3", ls="-", lw=0.9, marker="", label="Model B"),
+            plt.Line2D([], [], color="0.3", ls="none", marker="s", ms=2.9, label=r"DM $\delta t=10$"),
+            plt.Line2D([], [], color="0.3", ls="none", marker="o", ms=2.4,
+                       mfc="none", mew=0.6, label=r"DM $\delta t=0.5$"),
+        ]
+        figure.legend(handles=handles, loc="outside upper center", ncol=3,
+                      title=fr"$L={lattice}$, $\kappa=0.34034$, $\lambda=1$")
+        figure.savefig(OUTPUT / f"rho_L{lattice}_t1000.pdf")
         plt.close(figure)
 
 
@@ -313,8 +262,7 @@ def main():
     results = {lattice: analyze_lattice(lattice) for lattice in LS}
     write_tables(results)
     plot_short(results)
-    plot_short_difference(results)
-    plot_long(results)
+    plot_loglog(results)
     print(f"saved {OUTPUT}")
 
 

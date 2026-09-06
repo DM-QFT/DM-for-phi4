@@ -124,11 +124,9 @@ class MPNCSNpp2D(nn.Module):
 
     def __init__(self, channels=(16, 32, 64, 128), embed_dim: int = 256,
                  use_attention: bool = False, periodic: bool = True,
-                 l_cond: bool = False,
                  use_bias: bool = False, use_mp_silu: bool = True,
                  use_mp_sum: bool = True):
         super().__init__()
-        self.l_cond = l_cond
         self.use_mp_silu = use_mp_silu
         self._act = mp_silu if use_mp_silu else F.silu
         pad_mode = "circular" if periodic else "zeros"
@@ -139,9 +137,6 @@ class MPNCSNpp2D(nn.Module):
         self.t_fourier = MPGaussianFourierProjection(embed_dim)
         self.t_lin1 = MPLinear(embed_dim, embed_dim, use_bias=use_bias)
         self.t_lin2 = MPLinear(embed_dim, embed_dim, use_bias=use_bias)
-        if l_cond:
-            self.L_fourier = MPGaussianFourierProjection(embed_dim)
-            self.L_lin = MPLinear(embed_dim, embed_dim, use_bias=use_bias)
 
         c = list(channels)
         self.conv_in = MPConv2d(1, c[0], 3, padding_mode=pad_mode, use_bias=use_bias)
@@ -183,16 +178,12 @@ class MPNCSNpp2D(nn.Module):
         self.norm_out = nn.GroupNorm(max(1, min(8, c[0] // 4)), c[0])
         self.conv_out = MPConv2d(c[0], 1, 3, padding_mode=pad_mode, use_bias=use_bias)
 
-    def _temb(self, t: torch.Tensor, spatial_size: int) -> torch.Tensor:
+    def _temb(self, t: torch.Tensor) -> torch.Tensor:
         h = self.t_lin1(self._act(self.t_fourier(t)))
-        if self.l_cond:
-            L_inv = torch.full_like(t, 1.0 / spatial_size)
-            h2 = self.L_lin(self._act(self.L_fourier(L_inv)))
-            h = mp_sum(h, h2, t=0.5)
         return self._act(self.t_lin2(self._act(h)))
 
     def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-        temb = self._temb(t, x.shape[-1])
+        temb = self._temb(t)
 
         h = self.conv_in(x)
         h1a = self.res1a(h, temb)

@@ -85,17 +85,14 @@ def main():
     print(f"Fine-tune from epoch {args.start_epoch} to {max_epochs}")
     print(f"Saving snapshots at 1-based epochs: {save_at}")
 
-    # Detect l_cond from the checkpoint state_dict
     ckpt = torch.load(args.base_ckpt, map_location="cpu", weights_only=False)
     h = ckpt.get("hyper_parameters", {})
     sigma = h.get("sigma", 240.0)
     norm_min = h.get("norm_min", -4.0)
     norm_max = h.get("norm_max", 4.0)
     L_max = h.get("L", max(L_list))
-    sd = ckpt.get("state_dict", {})
-    l_cond_detected = any("L_embed" in k for k in sd.keys())
     print(f"hparams: sigma={sigma}  norm=[{norm_min:.4f},{norm_max:.4f}]  "
-          f"L_max={L_max}  l_cond={l_cond_detected}")
+          f"L_max={L_max}")
 
     data_paths = [
         f"{args.data_prefix}_k={args.k}_l={args.l}_{L}^2.jld2"
@@ -114,7 +111,7 @@ def main():
     data_module.setup()
 
     marginal_prob_std_fn = functools.partial(marginal_prob_std, sigma=sigma)
-    score_model = NCSNpp2D(marginal_prob_std_fn, l_cond=l_cond_detected)
+    score_model = NCSNpp2D(marginal_prob_std_fn)
     # Multi-L runs typically need static per-L compilation. Match training
     # config by using ``reduce-overhead`` mode with dynamic=False.
     score_model = torch.compile(score_model, mode="reduce-overhead", dynamic=False)

@@ -115,3 +115,7 @@ core.*
 /CLAUDE.md
 /AGENTS.md
 /.claude/
+
+# local backup of the Aug 2026 laptop package, 591 MB
+/ModelB_download_20260813.tar.gz
+/ModelB_download_20260813.tar.gz.sha256

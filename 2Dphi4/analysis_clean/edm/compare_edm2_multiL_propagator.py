@@ -7,7 +7,7 @@ This is the Phase 4c analysis for the multi-L training experiment.
 
 Usage (from 2Dphi4/):
     python analysis/compare_edm2_multiL_propagator.py \
-        --run_dir runs/phi4_Lmulti8-16-32-64_k0.28_l0.022_edm2_sd0.343_lcond \
+        --run_dir runs/phi4_Lmulti8-16-32-64_k0.28_l0.022_edm2_sd0.343 \
         --ep 5000
 """
 
@@ -183,7 +183,7 @@ def main():
     ax.legend(fontsize=9)
     ax.set_ylim(0.7, 1.3)
 
-    fig.suptitle(f"Multi-L EDM2 (trained on L={args.training_Ls}, l_cond), "
+    fig.suptitle(f"Multi-L EDM2 (trained on L={args.training_Ls}), "
                  f"ckpt ep={args.ep}", y=1.02, fontsize=12)
     plt.tight_layout()
     out = Path(args.out)
