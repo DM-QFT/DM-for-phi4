@@ -1,7 +1,7 @@
 # Reverse-time Euler–Maruyama on SU(2)^links for the score model of train_su2_dm.py.
 # U_{t-Δt} = exp(i [g² S_θ(U,t) Δt + Z]·σ/2) U_t with g = σ^t and Z a heat-kernel increment of variance g² Δt, started
 # from Haar-random links (the t=1 marginal).  Checks the average plaquette and the 1x2, 2x2 Wilson loops against the
-# exact 2D values ⟨P⟩ = I₂(β)/I₁(β), ⟨P⟩², ⟨P⟩⁴ and against the training set.
+# infinite-volume 2D values ⟨P⟩ = I₂(β)/I₁(β), ⟨P⟩², ⟨P⟩⁴ and against the training set.
 import os
 import sys
 import h5py
@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from scipy.special import ive
 from torch_ema import ExponentialMovingAverage
-from train_su2_dm import LCNN, OUT, EPOCHS, diffusion_coeff, roll, qmul, conj, qexp, heat_kernel_step, haar_su2, load_cfgs
+from train_su2_dm import LCNN, DATA, OUT, EPOCHS, diffusion_coeff, roll, qmul, conj, qexp, heat_kernel_step, haar_su2, load_cfgs
 
 CKPT = sys.argv[1] if len(sys.argv) > 1 else f"{OUT}/ckpt_epoch{EPOCHS:04d}.pt"
 N_CFGS = 1000
@@ -32,19 +32,26 @@ def wilson(U, R, T):
     return W[..., 0]
 
 
+@torch.compile(mode="reduce-overhead", fullgraph=True, dynamic=False)
+def em_step(model, U, t, dt, noise):
+    tt = t.expand(U.shape[0])
+    g2 = diffusion_coeff(tt, model.sigma) ** 2
+    X = g2.view(-1, 1, 1, 1, 1) * model(U, tt) * dt
+    X = X + heat_kernel_step(U.shape[:-1], (g2 * dt * noise).view(-1, 1, 1, 1))
+    return qmul(qexp(X), U)
+
+
 @torch.no_grad()
 def em_sample(model, n, L):
     ts = torch.linspace(1.0, EPS, N_STEPS + 1)
+    noise = torch.ones(N_STEPS)
+    noise[-1] = 0  # Preserve the final drift-only denoising step.
     shape = (n, 2, L, L)
     U = haar_su2(shape)
     for i in range(N_STEPS):
-        tt = ts[i].expand(n)
-        dt = ts[i] - ts[i + 1]
-        g2 = diffusion_coeff(tt, model.sigma) ** 2
-        X = g2.view(-1, 1, 1, 1, 1) * model(U, tt) * dt
-        if i < N_STEPS - 1:
-            X = X + heat_kernel_step(shape, (g2 * dt).view(-1, 1, 1, 1))
-        U = qmul(qexp(X), U)
+        torch.compiler.cudagraph_mark_step_begin()
+        # Keep U outside the graph so later replays cannot overwrite retained samples.
+        U.copy_(em_step(model, U, ts[i], ts[i] - ts[i + 1], noise[i]))
     return U
 
 
@@ -81,7 +88,8 @@ def main():
 
     P = ive(2, ck["beta"]) / ive(1, ck["beta"])
     print(f"{'exact':10s} ⟨P⟩ = {P:.5f}                             W(1x2) = {P**2:.5f}             W(2x2) = {P**4:.5f}")
-    report("training", load_cfgs(N_CFGS))
+    reference = f"{os.path.dirname(DATA)}/cfgs_su2_beta={ck['beta']}_{ck['L']}^2.h5"
+    report("training", load_cfgs(N_CFGS, path=reference))
     report("generated", U)
 
     out = f"{os.path.dirname(CKPT)}/samples_epoch{ck['epoch']:04d}_steps{N_STEPS}.h5"

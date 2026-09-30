@@ -60,7 +60,8 @@ def qmul(p, q):
 def qbilinear(weight, W):
     # Sum_ij weight[k,i,j] W_i W_j, keeping the reduced channel j contiguous.
     v = W.permute(0, 2, 3, 4, 1)
-    a = (v @ weight.permute(1, 0, 2).flatten(1)).reshape(*v.shape[:-1], weight.shape[0], weight.shape[2])
+    # Flatten explicitly so inference uses one large GEMM instead of tiny batched GEMMs.
+    a = (v.reshape(-1, W.shape[1]) @ weight.permute(1, 0, 2).flatten(1)).reshape(*v.shape[:-1], weight.shape[0], weight.shape[2])
     a0, a1, a2, a3 = a.unbind(-3)
     b0, b1, b2, b3 = v.unsqueeze(-2).unbind(-3)
     out = torch.stack(((a0*b0 - a1*b1 - a2*b2 - a3*b3).sum(-1),
@@ -240,8 +241,8 @@ def check_equivariance(model, U):
     print(f"gauge equivariance check: max relative deviation {err:.1e}")
 
 
-def load_cfgs(n=None):
-    with h5py.File(DATA) as f:
+def load_cfgs(n=None, path=DATA):
+    with h5py.File(path) as f:
         U = f["cfgs"][:n]  # (n, y, x, mu, a, b)
     # U = a0 + i a⃗·σ, so (a0, a1, a2, a3) = (Re U₁₁, Im U₁₂, Re U₁₂, Im U₁₁)
     q = np.stack([U[..., 0, 0].real, U[..., 0, 1].imag, U[..., 0, 1].real, U[..., 0, 0].imag], -1)
