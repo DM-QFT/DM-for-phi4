@@ -7,9 +7,12 @@
 # plaquette → parallel-transport convolution → quaternion bilinear products → scalar-part gating → per-link readout.
 import os
 import time
+import math
 import h5py
 import numpy as np
 import torch
+import triton
+import triton.language as tl
 from torch import nn
 from torch_ema import ExponentialMovingAverage
 
@@ -54,6 +57,19 @@ def qmul(p, q):
     return torch.cat([p0 * q0 - (pv * qv).sum(-1, keepdim=True), p0 * qv + q0 * pv - torch.linalg.cross(pv, qv)], -1)
 
 
+def qbilinear(weight, W):
+    # Sum_ij weight[k,i,j] W_i W_j, keeping the reduced channel j contiguous.
+    v = W.permute(0, 2, 3, 4, 1)
+    a = (v @ weight.permute(1, 0, 2).flatten(1)).reshape(*v.shape[:-1], weight.shape[0], weight.shape[2])
+    a0, a1, a2, a3 = a.unbind(-3)
+    b0, b1, b2, b3 = v.unsqueeze(-2).unbind(-3)
+    out = torch.stack(((a0*b0 - a1*b1 - a2*b2 - a3*b3).sum(-1),
+                       (a0*b1 + a1*b0 - a2*b3 + a3*b2).sum(-1),
+                       (a0*b2 + a2*b0 - a3*b1 + a1*b3).sum(-1),
+                       (a0*b3 + a3*b0 - a1*b2 + a2*b1).sum(-1)), -1)
+    return out.permute(0, 3, 1, 2, 4)
+
+
 def conj(q):
     return torch.cat([q[..., :1], -q[..., 1:]], -1)
 
@@ -89,17 +105,44 @@ def transport(W, U):
     return torch.cat(out, 1)
 
 
+@triton.jit
+def _heat_kernel_draw(Y, Delta, Seed, N: tl.constexpr, REPEAT: tl.constexpr, BLOCK: tl.constexpr):
+    idx = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    delta = tl.load(Delta + idx // REPEAT, idx < N, other=0)
+    sd = tl.sqrt(delta)
+    seed = tl.load(Seed)
+    accepted = (idx >= N) | (delta == 0)
+    x = tl.full((BLOCK,), 0, tl.float32)
+    y = tl.full((BLOCK,), 0, tl.float32)
+    z = tl.full((BLOCK,), 0, tl.float32)
+    attempt = 0
+    while tl.sum((~accepted).to(tl.int32), 0) > 0:
+        # Separate Philox counters for the proposal and acceptance uniform, including every retry.
+        counter = 2 * (idx.to(tl.uint64) + attempt.to(tl.uint64) * N)
+        a, b, c, _ = tl.randn4x(seed, counter)
+        a, b, c = sd * a, sd * b, sd * c
+        th = tl.sqrt(a * a + b * b + c * c)
+        prob = tl.where(th > 1e-2, tl.sin(th / 2) / (th / 2), 1 - th * th / 24)
+        ok = (~accepted) & (tl.rand(seed, counter + 1) < prob)
+        x, y, z = tl.where(ok, a, x), tl.where(ok, b, y), tl.where(ok, c, z)
+        accepted = accepted | ok
+        attempt += 1
+    tl.store(Y + 3 * idx, x, idx < N)
+    tl.store(Y + 3 * idx + 1, y, idx < N)
+    tl.store(Y + 3 * idx + 2, z, idx < N)
+
+
 def heat_kernel_step(shape, delta):
     # Y = √Δ ξ, ξ ~ N(0, 1₃), accepted with probability √j(Y), j = [sin(θ/2)/(θ/2)]² (Weyl density): the Gaussian
     # pushforward has density Gauss(Y)/j w.r.t. Haar, the heat kernel Gauss(Y)/√j, so exp(iY) is an exact Brownian
     # increment of variance Δ per generator up to wrapping images of weight e^{-79/Δ}.  Draws with θ > 2π (outside the
-    # alcove, probability e^{-2π²/Δ}) have √j < 0 and are rejected.  delta broadcasts to shape; Δ = 0 gives Y = 0.
-    sd = torch.sqrt(delta)[..., None]
-    Y = sd * torch.randn(*shape, 3)
-    acc = torch.zeros(shape, dtype=torch.bool)
-    while not acc.all():
-        acc = acc | (torch.rand(shape) < sinc_half(Y.norm(dim=-1)))
-        Y = torch.where(acc[..., None], Y, sd * torch.randn(*shape, 3))
+    # alcove, probability e^{-2π²/Δ}) have √j < 0 and are rejected. Δ = 0 gives Y = 0.
+    # delta holds one variance per leading group, shared by all trailing link/site axes.
+    # Each GPU block retries until all its draws are accepted. No CPU synchronization or retry cutoff.
+    n = math.prod(shape)
+    Y = torch.empty((*shape, 3), device=delta.device)
+    seed = torch.randint(0, 2**63 - 1, (), device=delta.device, dtype=torch.int64)
+    _heat_kernel_draw[(triton.cdiv(n, 128),)](Y, delta, seed, n, n // delta.numel(), 128)
     return Y
 
 
@@ -135,9 +178,11 @@ class LCNN(nn.Module):
         one = torch.zeros(B, 1, Lx, Ly, 4)
         one[..., 0] = 1
         for conv, bilin, a, b in zip(self.conv, self.bilin, self.gate_a, self.gate_b):
-            W = torch.einsum("qoc,bcxyq->boxyq", conv[[0, 1, 1, 1]], transport(W, U))
+            # Keep batch separate so the weight gradient uses many small reductions in parallel.
+            weights = conv[[0, 1, 1, 1]].expand(B, -1, -1, -1)
+            W = torch.einsum("bqoc,bcxyq->boxyq", weights, transport(W, U))
             Wi = torch.cat([one, W], 1)
-            W = qmul(torch.einsum("kij,bixyq->bkjxyq", bilin, Wi), Wi[:, None]).sum(2)
+            W = qbilinear(bilin, Wi)
             # bounded gate: with SiLU the bilinear product times the gate grows cubically per layer and the q0
             # fluctuations of SU(2) loops (std 1/2) blow up the tails at initialisation (|W| ~ 300 at some sites)
             gate = torch.sigmoid(a[None, :, None, None] * W[..., 0] + b(h)[:, :, None, None])
@@ -153,7 +198,9 @@ def loss_fn(model, U0):
     t = EPS + (1.0 - EPS) * (1 - torch.sqrt(1 - torch.rand(B)))
     s = marginal_prob_std(t, model.sigma)
     K = torch.ceil(s**2 / DELTA_MAX).clamp_min(1)
-    Kmax = 1 << (int(K.max()) - 1).bit_length()  # power of two for the pairwise product below; padding substeps have Δ = 0, Y = 0
+    # Fixed upper bound at t=1 keeps the compiled graph static. Padding still has Δ = 0, Y = 0.
+    max_steps = math.ceil((model.sigma**2 - 1) / (2 * math.log(model.sigma) * DELTA_MAX))
+    Kmax = 1 << (max_steps - 1).bit_length()
     delta = s**2 / K
     active = torch.arange(1, Kmax + 1)[None, :] <= K[:, None]
     # all increments of all substeps are drawn at once (they do not depend on U); the ordered product exp(iY_K)…exp(iY_1)
@@ -198,7 +245,7 @@ def load_cfgs(n=None):
         U = f["cfgs"][:n]  # (n, y, x, mu, a, b)
     # U = a0 + i a⃗·σ, so (a0, a1, a2, a3) = (Re U₁₁, Im U₁₂, Re U₁₂, Im U₁₁)
     q = np.stack([U[..., 0, 0].real, U[..., 0, 1].imag, U[..., 0, 1].real, U[..., 0, 0].imag], -1)
-    return torch.tensor(q.transpose(0, 3, 2, 1, 4), dtype=torch.float32)
+    return torch.tensor(q.transpose(0, 3, 2, 1, 4), dtype=torch.float32).contiguous()
 
 
 def main():
@@ -207,25 +254,32 @@ def main():
     U_data = load_cfgs()
     N = U_data.shape[0]
     model = LCNN(CH, NLAYERS, SIGMA)
-    ema = ExponentialMovingAverage(model.parameters(), decay=EMA_DECAY)
-    opt = torch.optim.Adam(model.parameters(), lr=LR)
+    params = list(model.parameters())
+    ema = ExponentialMovingAverage(params, decay=EMA_DECAY)
+    opt = torch.optim.Adam(params, lr=LR, fused=True)
+    train_loss = torch.compile(loss_fn, mode="reduce-overhead", fullgraph=True, dynamic=False)
     print(f"{N} configs, L={L}, β={BETA}, σ={SIGMA} (std(1)={marginal_prob_std(torch.tensor(1.0), SIGMA):.2f}), "
-          f"{sum(p.numel() for p in model.parameters())} parameters")
+          f"{sum(p.numel() for p in params)} parameters")
     check_equivariance(model, U_data[:2])
     t0 = time.time()
     for epoch in range(1, EPOCHS + 1):
         perm = torch.randperm(N)
-        tot = 0.0
+        tot = torch.zeros(())
         nb = 0
         for i in range(0, N - BATCH + 1, BATCH):
-            loss = loss_fn(model, U_data[perm[i:i + BATCH]])
-            opt.zero_grad()
+            torch.compiler.cudagraph_mark_step_begin()
+            opt.zero_grad(set_to_none=True)
+            loss = train_loss(model, U_data[perm[i:i + BATCH]])
             loss.backward()
             opt.step()
-            ema.update()
-            tot += loss.item()
+            # Preserve torch_ema's warmup decay while updating all parameter tensors in one operation.
+            ema.num_updates += 1
+            decay = min(ema.decay, (1 + ema.num_updates) / (10 + ema.num_updates))
+            with torch.no_grad():
+                torch._foreach_lerp_(ema.shadow_params, params, 1 - decay)
+            tot.add_(loss.detach())
             nb += 1
-        print(f"epoch {epoch:4d}  loss {tot / nb:.4f}  ({time.time() - t0:.0f}s)", flush=True)
+        print(f"epoch {epoch:4d}  loss {(tot / nb).item():.4f}  ({time.time() - t0:.0f}s)", flush=True)
         if epoch % 10 == 0 or epoch == EPOCHS:
             torch.save({"model": model.state_dict(), "ema": ema.state_dict(), "ch": CH, "nlayers": NLAYERS,
                         "sigma": SIGMA, "L": L, "beta": BETA, "epoch": epoch}, f"{OUT}/ckpt_epoch{epoch:04d}.pt")
