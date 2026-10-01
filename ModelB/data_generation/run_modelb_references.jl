@@ -33,6 +33,10 @@ references = (
     (joinpath(corrgauss, "gaussian_chain_ep10000_N1024_seed20261001",
               "gaussian_ep10000_t0_N1024_seed20260721.npz"),
      "corrgauss_gaussian_L32_N1024.h5", UInt64(20261201)),
+    # 同一组 Gaussian 场，逐轨道把 M 换成配对 HMC 构型的 M（守恒荷分布与 Eq 一致）
+    (joinpath(corrgauss, "gaussianM_chain_ep10000_N1024",
+              "gaussianM_ep10000_t0_N1024.npz"),
+     "corrgauss_gaussianM_L32_N1024.h5", UInt64(20261301)),
 )
 
 magnetization(c) = vec(mean(Float64, c; dims=(1, 2)))

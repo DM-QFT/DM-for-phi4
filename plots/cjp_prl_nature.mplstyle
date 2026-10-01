@@ -15,7 +15,12 @@ xtick.labelsize    : 9.5
 ytick.labelsize    : 9.5
 legend.fontsize    : 9.5
 
-# 3.375 * 0.75 aspect
+# 3.375 * 0.75 aspect; the axes box is then about 2.92 x 2.11 in.
+# Multi-panel figures keep every panel at this same axes box: choose figsize
+# (and gridspec wspace) so that the panels come out at that size, and insert
+# the figure in LaTeX at its natural size, never scaled.
+# Panels narrower than about 1.5 in may be taller than 0.75 so that the
+# in-panel labels and legend still fit.
 figure.figsize     : 3.375, 2.531
 figure.dpi         : 200
 figure.constrained_layout.use    : True
@@ -33,7 +38,7 @@ ps.fonttype         : 42
 
 axes.linewidth              : 0.7
 axes.grid                   : False
-axes.axisbelow              : True
+axes.axisbelow              : line
 axes.formatter.use_mathtext : True
 axes.formatter.limits       : -3, 4
 axes.labelpad               : 2.5
@@ -70,6 +75,9 @@ ytick.minor.size    : 2.0
 xtick.minor.width   : 0.55
 ytick.minor.width   : 0.55
 
+# Legends live inside the axes (ax.legend on a panel with free space).
+# Never use figure.legend outside the frame.
+legend.loc           : best
 legend.frameon       : False
 legend.handlelength  : 1.6
 legend.handletextpad : 0.4
@@ -87,5 +95,5 @@ legend.markerscale   : 0.9
 # quoted cycler value, so use the exact RGB equivalents of the hex colors.
 axes.prop_cycle : cycler('color', [(0.835294, 0.368627, 0.0), (0.0, 0.447059, 0.698039), (0.8, 0.474510, 0.654902), (0.0, 0.619608, 0.450980), (0.901961, 0.623529, 0.0), (0.337255, 0.705882, 0.913725)]) + cycler('marker', ['o', 's', 'D', '^', 'v', 'P'])
 
-# Ordered quantities such as physical time should use a sequential map.
-image.cmap : viridis
+# Signed fields use FIELD_CMAP, registered by importing modelb_palette.
+image.cmap : modelb_field

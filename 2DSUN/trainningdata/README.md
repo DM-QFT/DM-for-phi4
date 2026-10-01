@@ -186,8 +186,16 @@ julia -t 8 su3_2d_heatbath.jl --beta 6.0 --L 16 --n_cfgs 10000 \
 
 ## 12. 注意事项
 
-- $L$ 取偶数。
+- $L$ 取偶数。这是线程棋盘格的要求，程序不做检查。
 - $\beta$ 很小或 staple 近乎抵消时 $\alpha_{\rm KP}$ 小，Kennedy–Pendleton 的拒绝次数增多，只影响速度不影响正确性。
 - Cabibbo–Marinari 不是 SU(3) 的精确热浴，`n_or` 次过松弛负责压自相关。`n_or=3` 下保存构型之间已经独立。
 - 相同 seed 但不同线程数给出不同的随机流。
 - 全部构型按顺序流式写入，程序中途终止时已写入的部分仍然可读。
+
+## 13. SU(2) 版
+
+`su2_2d_heatbath.jl` 是本程序的 SU(2) 版，用法和输出约定相同。Kennedy–Pendleton 直接抽整条链，不需要子群分解。过松弛是 $U\leftarrow V_0^\dagger U^\dagger V_0^\dagger$。h5py 读到的布局是 `(n, y, x, mu, 2, 2)`。
+
+无限体积精确解 $\langle P\rangle=I_2(\beta)/I_1(\beta)$。环面上的精确有限体积配分函数是 $Z=\sum_{n\ge1}\big(2I_n(\beta)/\beta\big)^{L^2}$，修正量级 $\langle P\rangle^{L^2}$，$L=2$ 时 1.3%，$L=8$ 时 $10^{-23}$。默认 $\beta=2$ 对应 $\langle P\rangle\approx0.433$，与 SU(3) 的 $\beta=6$ 量级相当。
+
+2026-09-30 的检验。$\beta=2$，$L=2,4,8$，多 seed 合并后与精确值的偏离是 $-1.6\sigma$、$+1.2\sigma$、$-1.7\sigma$，符号交替，无偏到 $2\times10^{-4}$（0.05%）。$L=2$ 的有限体积公式另用 Haar 重要性采样独立核对过。

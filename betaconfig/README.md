@@ -19,6 +19,10 @@
 
 kappa=0.28、lambda=0.022，L=8..256，ep10000、steps2000、log schedule。
 
+3D 版 c2（`tests/c2_sensitivity_3d.py`）用 `3Dphi4/runs/phi4_3d_Lmulti4-8-16-32_k0.1923_l0.9_ncsnpp` 的 ep=10000，
+L=32 在训练范围内，L=64 是跨 L，步数扫到 4000，compile(default) 加 EMA。四节点作业
+`tests/pbs_c2_3d.sh` 由用户提交。HMC 参考值 L=64 为 β̂=1.00007(11)。
+
 ## 目录
 
 遵循 `docs/REPO_LAYOUT.md`。

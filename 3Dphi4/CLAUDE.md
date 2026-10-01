@@ -11,7 +11,7 @@
 ## Key Scripts
 
 - `train_phi4.py` — Training with `torch.compile` + bf16-mixed precision. Requires GPU ≥24GB (4090/5090). Run: `python train_phi4.py --L 64 --k 0.2 --l 0.9 --network ncsnpp --device cuda:0`
-- `sample_phi4.py` / `sample_phi4_3d_sweep.py` — Sampling (single + multi-ckpt sweep)
+- `sample_phi4.py` / `sample_phi4_3d_sweep.py` — Sampling (single + multi-ckpt sweep). Pass `--schedule linear` explicitly. It is empirically better than log in 3D and 4D (log spends almost all steps at the small-noise end), and these scripts still default to log.
 - `analysis/compute_fid_3d.py` — FID computation for 3D samples
 - `analysis/plot_loss_curves_3d.py` — Loss decomposition plotting
 - All other data-analysis scripts live under `analysis/`

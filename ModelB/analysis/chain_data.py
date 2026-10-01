@@ -29,10 +29,17 @@ RUN = Path(os.environ.get(
     ROOT / "runs/modelBcond_L32_k0.34034_l1.0_t10_ncsnpp_corrgauss_zlog_noskip",
 )).expanduser().resolve()
 OUTPUT = ROOT / "results" / "dm_vs_modelb" / RUN.name
-TMAX = int(os.environ.get("MODELB_CHAIN_TMAX", "2000"))
-TIMES = np.arange(0, TMAX + 1, 10, dtype=np.int32)
-SNAPSHOT_TIMES = (0, 10, 20, 50, 100, 200, 500, 1000)
-N_SAMPLES = int(os.environ.get("MODELB_CHAIN_N", "1024"))
+# Δt=0.5 链只走到 t=20，参照是 run_fine_L32_reference.jl 的 *_t0p5.h5
+FINE = "_t0.5_" in RUN.name
+STEP = 0.5 if FINE else 10
+TMAX = float(os.environ.get("MODELB_CHAIN_TMAX", "20" if FINE else "2000"))
+TIMES = np.arange(0, TMAX + STEP / 2, STEP, dtype=np.float64 if FINE else np.int32)
+REF_SUFFIX = "_t0p5" if FINE else ""
+SNAPSHOT_TIMES = (0, 10, 20, 50, 100, 200, 500, 1000, 2000)
+# 初态与参照文件都是 1024 条；快速链等间隔取 N_SAMPLES 条（文件不是随机排列），参照同样抽取以保持配对
+N_FILES = 1024
+N_SAMPLES = int(os.environ.get("MODELB_CHAIN_N", str(N_FILES)))
+STRIDE = N_FILES // N_SAMPLES
 # Model B 参照全部集中在 results/modelb_reference/，按 <run 标签>_<初态>_L<L>_N<N> 命名
 REFERENCES = ROOT / "results" / "modelb_reference"
 REFERENCE_TAG = "corrgauss" if "corrgauss" in RUN.name else "hmc_noskip"
@@ -40,21 +47,31 @@ CHAINS = ("modelb", "dm")
 KEYS = ("phi2", "phi4", "variance", "mean_abs_drift")
 # t=0 初态与 Model B 参照沿用 corrgauss run 的（zlog 链就是从它们出发采的）
 T0 = ROOT / "runs/modelBcond_L32_k0.34034_l1.0_t10_ncsnpp_corrgauss_uniformM_noskip/samples"
-HMC_SUFFIX = "" if "zlog" in RUN.name else "_seed20260901"
-GAUSSIAN_SUFFIX = "" if "zlog" in RUN.name else "_seed20261001"
+# 只有最早的 hmc_noskip / uniformM 两个 run 的链目录带 seed 后缀
+HMC_SUFFIX = "_seed20260901" if RUN.name.endswith(("_hmc_noskip", "_uniformM_noskip")) else ""
+
+
+
+def chain_dir(name):
+    """链目录名带采样时用的 epoch（10000/5000/1000 …），按前缀找唯一一个。"""
+    found = sorted(RUN.glob(f"samples/{name}_chain_ep*_N{N_SAMPLES}{HMC_SUFFIX}"))
+    return found[-1] if found else RUN / f"samples/{name}_chain_N{N_SAMPLES}"
+
+
 # 初态名 -> (链目录, 链文件, t=0 初态, Model B 参照, 格点尺寸)
 INITIALS = {
     "hmc": (
-        RUN / f"samples/hmc_chain_ep10000_N{N_SAMPLES}{HMC_SUFFIX}", "chain.h5",
-        str(T0 / f"hmc_chain_ep10000_N{N_SAMPLES}_seed20260901"
-             / f"hmc_ep10000_t0_N{N_SAMPLES}.npz"),
-        f"{REFERENCE_TAG}_hmc_L32_N{N_SAMPLES}.h5", 32,
+        chain_dir("hmc"), "chain.h5",
+        str(T0 / f"hmc_chain_ep10000_N{N_FILES}_seed20260901"
+             / f"hmc_ep10000_t0_N{N_FILES}.npz"),
+        f"{REFERENCE_TAG}_hmc_L32_N{N_FILES}{REF_SUFFIX}.h5", 32,
     ),
+    # Gaussian 场逐轨道 M 换成配对 HMC 的 M（守恒荷分布与 Eq 一致），键名不变
     "gaussian": (
-        RUN / f"samples/gaussian_chain_ep10000_N{N_SAMPLES}{GAUSSIAN_SUFFIX}", "chain.h5",
-        str(T0 / f"gaussian_chain_ep10000_N{N_SAMPLES}_seed20261001"
-             / f"gaussian_ep10000_t0_N{N_SAMPLES}_seed20260721.npz"),
-        f"{REFERENCE_TAG}_gaussian_L32_N{N_SAMPLES}.h5", 32,
+        chain_dir("gaussianM"), "chain.h5",
+        str(T0 / f"gaussianM_chain_ep10000_N{N_FILES}"
+             / f"gaussianM_ep10000_t0_N{N_FILES}.npz"),
+        f"{REFERENCE_TAG}_gaussianM_L32_N{N_FILES}{REF_SUFFIX}.h5", 32,
     ),
 }
 
@@ -120,14 +137,14 @@ def analyze(initial_key, ky, kx, volume):
 
     dm_times, dm_data = load_series(directory / chain_name)
     modelb_times, modelb_data = load_series(REFERENCES / reference_name)
-    initial = load_fields(directory / initial_name)
+    initial = load_fields(directory / initial_name)[::STRIDE]
 
     for time in TIMES:
         print(f"{initial_key}: t={time}", flush=True)
         dm_fields = initial if time == 0 else np.asarray(
             dm_data[series_index(dm_times, time)], dtype=np.float32)
         modelb_fields = initial if time == 0 else np.asarray(
-            modelb_data[series_index(modelb_times, time)], dtype=np.float32)
+            modelb_data[series_index(modelb_times, time)][::STRIDE], dtype=np.float32)
         for chain, fields in (("modelb", modelb_fields), ("dm", dm_fields)):
             mean, phi2, phi4, variance = moments(fields)
             for key, array in zip(

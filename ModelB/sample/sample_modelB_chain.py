@@ -45,6 +45,7 @@ def build_parser():
     parser.add_argument("--output", type=Path, default=RUN_DIR / "samples/chain.h5")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--compile_mode", default="reduce-overhead")
+    parser.add_argument("--n", type=int, help="use n initial fields at equal stride")
     return parser
 
 
@@ -74,7 +75,10 @@ def main(argv=None):
 
     with np.load(parent, allow_pickle=False) as archive:
         phi = np.asarray(archive["phi_gen"], dtype=np.float32)
-    index = np.arange(len(phi), dtype=np.int64)
+    # 初态文件不是随机排列（HMC 前 512 条的 G_1 均值 5.6，后 512 条 7.4），子集按等间隔取
+    stride = 1 if args.n is None else len(phi) // args.n
+    index = np.arange(0, stride * (args.n or len(phi)), stride, dtype=np.int64)
+    phi = phi[index]
 
     checkpoint_data = torch.load(
         checkpoint, map_location="cpu", weights_only=False
@@ -92,6 +96,7 @@ def main(argv=None):
     score_model = NCSNppCond2D(
         functools.partial(marginal_prob_std, sigma=sigma),
         in_channels=int(hparams.get("in_channels", 2)),
+        channels=list(hparams.get("channels") or (16, 32, 64, 128)),
     )
     model = ConditionalDiffusionModel.load_from_checkpoint(
         str(checkpoint),

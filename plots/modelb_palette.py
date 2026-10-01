@@ -22,3 +22,4 @@ def time_colors(n):
 FIELD_CMAP = LinearSegmentedColormap.from_list(
     'modelb_field', ['#2F63AC', '#F4F4F2', '#B7433E'], N=256
 )
+mpl.colormaps.register(FIELD_CMAP)

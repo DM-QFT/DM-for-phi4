@@ -1,0 +1,45 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=30:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_boxa2_wide
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_L32_boxa2_b128_wide.pbs.log
+
+# 盒 A 正式版（Δt=10）的通道翻倍网络 [32,64,128,256]（9.5M 参数）：102400 对（缺则补），
+# batch 128 × 10000 epoch = 8M 步，每步约 7.6 ms → 训练约 17 h，加两条链 1.5 h，墙钟 30 h。
+set -euo pipefail
+
+cd /work/gw97/w97000/project/DM/ModelB
+export PATH=/work/gw97/w97000/envs/nenv2/bin:$PATH
+
+echo "Job ID: ${PBS_JOBID}"
+echo "Node: $(hostname)"
+echo "Start: $(date '+%F %T')"
+nvidia-smi -L
+
+COND=trainingdata/modelB_L32_Ne102400_corrgaussboxa2_l1_kappa_0.340340_t0_seed2026092001.jld2
+TARGET=trainingdata/modelB_L32_Ne102400_corrgaussboxa2_l1_kappa_0.340340_t10_dt0.002_seed2026092003.jld2
+
+if [[ ! -f ${TARGET} || ! -f ${COND} ]]; then
+    rm -f "${COND}" "${TARGET}"
+    /work/gw97/w97000/.local/bin/julia \
+        data_generation/run_l32_l1_k0p340340_corrgauss_boxa2_t10.jl
+fi
+
+PYTHONUNBUFFERED=1 python -u train/train_modelB_cond.py \
+    --L 32 \
+    --kappa 0.34034 --lam 1.0 --horizon 10 \
+    --sigma 250 --lr 0.001 --batch_size 128 \
+    --epochs 10000 --ema_start 0 --num_ckpts 100 \
+    --device cuda:0 --cuda_graph --channels 32,64,128,256 \
+    --output_suffix _corrgauss_boxa2_b128_wide_noskip \
+    --cond_path "${COND}" \
+    --target_path "${TARGET}"
+
+PYTHONUNBUFFERED=1 python -u sample/run_chains.py boxa2wide
+MODELB_CHAIN_RUN=runs/modelBcond_L32_k0.34034_l1.0_t10_ncsnpp_corrgauss_boxa2_b128_wide_noskip \
+    python -u analysis/chain_data.py
+
+echo "Finish: $(date '+%F %T')"

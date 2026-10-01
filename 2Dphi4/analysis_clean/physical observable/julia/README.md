@@ -41,6 +41,10 @@ Common flags: `--Ls 16 32 64`, `--kappas 0.26 0.2705 0.28`, `--n_bins 50`,
   autocorrelation; leave-one-bin-out propagates errors through the non-linear
   observables (χ, U₄, κₙ). The HMC table imposes Z₂ via even-moment formulas
   rather than augmenting the ensemble with {φ,−φ}.
+- **Central values are the plug-in point estimate on the full sample.**
+  Resampling only gives the error. A bootstrap mean used as the central value
+  doubled the bias of κ₈. The HMC and DM rows of the `DM.tex` single-site
+  cumulant table must use the same estimator (Z₂-even `persite_avg`) and the same N.
 - **k-statistics** (`kstat_site`) have no Julia package, so the standard
   power-sum formulas are used (n=2,4).
 - **Connected components** (clusters) use an internal flood-fill (4-connectivity,

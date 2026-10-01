@@ -1,0 +1,35 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=18:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_zlog_d4ft
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_L32_zlog_d4ft.pbs.log
+
+# zlog 续训：从 epoch=10000 的 EMA 权重出发再训 5000 epoch，
+# 加 D4 格点对称增广，学习率余弦退火 1e-4→1e-5，EMA 0.99999。
+# 训完直接采 Eq/Noneq 两条 t=2000 链并算 Fig.2 数据。
+set -euo pipefail
+cd /work/gw97/w97000/project/DM/ModelB
+export PATH=/work/gw97/w97000/envs/nenv2/bin:$PATH
+echo "Job ID: ${PBS_JOBID}"
+echo "Node: $(hostname)"
+echo "Start: $(date '+%F %T')"
+nvidia-smi -L
+COND=trainingdata/modelB_L32_Ne51200_corrgausszlog_l1_kappa_0.340340_t0_seed2026081001.jld2
+TARGET=trainingdata/modelB_L32_Ne51200_corrgausszlog_l1_kappa_0.340340_t10_dt0.002_seed2026081002.jld2
+PYTHONUNBUFFERED=1 python -u train/train_modelB_cond.py \
+    --L 32 \
+    --kappa 0.34034 --lam 1.0 --horizon 10 \
+    --sigma 250 --lr 1e-4 --lr_min 1e-5 --ema_decay 0.99999 --batch_size 64 \
+    --epochs 5000 --ema_start 0 --num_ckpts 100 \
+    --device cuda:0 --compile_mode reduce-overhead \
+    --output_suffix _corrgauss_zlog_noskip_d4ft \
+    --init_ckpt runs/modelBcond_L32_k0.34034_l1.0_t10_ncsnpp_corrgauss_zlog_noskip/models/epoch=10000.ckpt \
+    --cond_path "${COND}" \
+    --target_path "${TARGET}"
+PYTHONUNBUFFERED=1 python -u sample/run_chains.py d4ft
+MODELB_CHAIN_RUN=runs/modelBcond_L32_k0.34034_l1.0_t10_ncsnpp_corrgauss_zlog_noskip_d4ft \
+    python -u analysis/chain_data.py
+echo "Finish: $(date '+%F %T')"

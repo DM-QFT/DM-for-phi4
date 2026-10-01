@@ -18,7 +18,7 @@ from torch_ema import ExponentialMovingAverage
 
 torch.set_default_device("cuda")
 
-L = 16
+L = 32
 BETA = 2.0
 DATA = f"/work/gw97/w97000/project/DM/2DSUN/trainningdata/cfgs_su2_beta={BETA}_{L}^2.h5"
 SIGMA = 14.0  # Σ(1) = 36.9: the fundamental character has decayed to e^{-3Σ/8} = 1e-6 (C_F = 3/4), the t=1 marginal is Haar
@@ -241,12 +241,12 @@ def check_equivariance(model, U):
     print(f"gauge equivariance check: max relative deviation {err:.1e}")
 
 
-def load_cfgs(n=None, path=DATA):
+def load_cfgs(n=None, path=DATA, dtype=torch.float32):
     with h5py.File(path) as f:
         U = f["cfgs"][:n]  # (n, y, x, mu, a, b)
     # U = a0 + i a⃗·σ, so (a0, a1, a2, a3) = (Re U₁₁, Im U₁₂, Re U₁₂, Im U₁₁)
     q = np.stack([U[..., 0, 0].real, U[..., 0, 1].imag, U[..., 0, 1].real, U[..., 0, 0].imag], -1)
-    return torch.tensor(q.transpose(0, 3, 2, 1, 4), dtype=torch.float32).contiguous()
+    return torch.tensor(q.transpose(0, 3, 2, 1, 4), dtype=dtype).contiguous()
 
 
 def main():

@@ -38,6 +38,7 @@ X_BOT = (0.14, 1.012, 1.883, 2.755)
 Y_TOP, Y_BOT = 1.43, 0.29
 LW = 1.0                          # 连线、箭头、⊕ 统一线宽（pt）
 HEAD_L, HEAD_W = 5 / 72, 2 / 72   # 箭头长与半宽
+TINT = 1 - 0.18 * (1 - np.array(mc.to_rgb(DM)))  # 学习部件的浅蓝底色，不透明以盖住虚线
 fig = plt.figure(figsize=(W, H))
 ax = fig.add_axes([0, 0, 1, 1], xlim=(0, W), ylim=(0, H))
 ax.set_axis_off()
@@ -83,7 +84,7 @@ def arrow(p0, p1, color, dots=False):
 
 
 for x, t, lab in zip(X_TOP, (0, 100, 110, 1000),
-                     (r"$\phi_0$", r"$\phi_t$", r"$\phi_{t+\Delta t}$", r"$\phi_{t+n\Delta t}$")):
+                     (r"$\phi_0$", r"$\phi_t$", r"$\phi_{t+\delta t}$", r"$\phi_{t+n\delta t}$")):
     # 初态振幅只有 0.1，按 ±1.8 画是一片白，改按 3.5 std 显示噪声结构
     panel(x, Y_TOP, phi[t], 3.5 * phi[0].std() if t == 0 else 1.8, lab)
 for x, s, lab in zip(X_BOT, (1.0, 0.7, 0.3, 0.0),
@@ -91,7 +92,7 @@ for x, s, lab in zip(X_BOT, (1.0, 0.7, 0.3, 0.0),
                       r"$\Delta\phi_{s=0.3}$", r"$\Delta\phi_{s=0}$")):
     panel(x, Y_BOT, dphi_s[s], 3 * dphi.std(), lab, below=True)
 
-# 上排物理轨迹：φ_t ⊕ Δφ → φ_{t+Δt}
+# 上排物理轨迹 φ_t ⊕ Δφ → φ_{t+δt}
 yc, xc, r = Y_TOP + S / 2, W / 2, 6.1 / 72
 arrow((X_TOP[0] + S, yc), (X_TOP[1] - 0.015, yc), REFERENCE, dots=True)
 arrow((X_TOP[1] + S, yc), (xc - r - 0.015, yc), REFERENCE)
@@ -107,7 +108,7 @@ arrow((bx, Y_TOP), (bx, by + 0.11 + 0.02), REFERENCE)
 for sgn in (-1, 1):
     ax.add_patch(Polygon([(bx + sgn * 0.17, by - 0.11), (bx + sgn * 0.17, by + 0.11),
                           (bx + sgn * 0.016, by + 0.04), (bx + sgn * 0.016, by - 0.04)],
-                         facecolor=mc.to_rgba(DM, 0.18), edgecolor=DM, lw=0.7))
+                         facecolor=TINT, edgecolor=DM, lw=0.7))
 ax.text(bx + 0.17 + 0.065, by, "score network\n" r"$s_\theta(\Delta\phi_s;\phi_t,s)$",
         ha="left", va="center", fontsize=8, color=DM, linespacing=1.3)
 
@@ -124,8 +125,20 @@ loop = MPath([(x1, Y_BOT + S), (x1, yh - rc), (x1, yh), (x1 - rc, yh), (xc + rc,
 ax.add_patch(PathPatch(loop, fill=False, edgecolor=DM, lw=LW, capstyle="butt"))
 ax.add_patch(FancyBboxPatch((0.029, 0.056), 3.317, 1.148, boxstyle="round,pad=0,rounding_size=0.06",
                             facecolor="none", edgecolor=ZERO, lw=0.9, linestyle="--", zorder=0))
-ax.text(0.11, 1.135, r"$p_\theta(\Delta\phi\mid\phi_t)$", ha="left", va="top", fontsize=8,
-        color=DM)
+# 角标：左上角与虚线框圆角同心（外扩 0.5pt 盖住线宽），其余三角只微圆，虚线从直边干净穿出
+pad, R, rr = 0.04, 0.067, 0.014
+x0, y1 = 0.029 - 0.007, 1.204 + 0.007
+lab = ax.text(x0 + pad, y1 - pad, r"$p_\theta(\Delta\phi\mid\phi_t)$", ha="left", va="top",
+              fontsize=8, color=DM)
+ext = lab.get_window_extent(fig.canvas.get_renderer()).transformed(ax.transData.inverted())
+x1, y0 = x0 + ext.width + 2 * pad, y1 - ext.height - 2 * pad
+badge = MPath([(x0 + R, y1), (x1 - rr, y1), (x1, y1), (x1, y1 - rr), (x1, y0 + rr), (x1, y0),
+               (x1 - rr, y0), (x0 + rr, y0), (x0, y0), (x0, y0 + rr), (x0, y1 - R), (x0, y1),
+               (x0 + R, y1)],
+              [MPath.MOVETO, MPath.LINETO, MPath.CURVE3, MPath.CURVE3, MPath.LINETO, MPath.CURVE3,
+               MPath.CURVE3, MPath.LINETO, MPath.CURVE3, MPath.CURVE3, MPath.LINETO, MPath.CURVE3,
+               MPath.CURVE3])
+ax.add_patch(PathPatch(badge, facecolor=TINT, edgecolor="none", zorder=2))
 
 fig.savefig(OUT)
 print(OUT)

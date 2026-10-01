@@ -22,7 +22,7 @@
 \title{Generative Modeling toward\\ Critical Behaviors}
 \subtitle{}
 
-\date{September 7, 2026}
+\date{September 8, 2026}
 \author{Yang-yang Tan}
 \titlegraphic{%
   \begin{tikzpicture}[remember picture, overlay]
@@ -42,11 +42,16 @@
       \hspace{0.6em}%
       \raisebox{-0.5\height}{\includegraphics[height=2em]{logo_dark.pdf}}%
     };
+    % Bottom-right corner: DM-QFT collaboration logo and website
+    \node[anchor=south east, inner sep=0pt, align=right] at ([xshift=-0.6cm,yshift=0.7cm]current page.south east) {%
+      \raisebox{-0.5\height}{\includegraphics[height=2.4em]{dm_qft_logo.png}}\hspace{0.35em}{\Large\bfseries\color{dmqft}DM-QFT}\\[0.25em]
+      {\small\color{dmqft}dm-qft.github.io/homepage}};
   \end{tikzpicture}%
 }
 
 \definecolor{burgundy}{RGB}{127, 0, 32}
 \definecolor{Kleinblue}{RGB}{0, 47, 167}
+\definecolor{dmqft}{RGB}{36, 108, 131} % median ink colour of logo/dm_qft_logo.png
 \newcommand{\running}[1]{\textcolor{burgundy}{#1}}
 \newcommand{\kb}[1]{{\bfseries\color{Kleinblue} #1}}
 % references pinned to the bottom of the page, independent of the frame content
@@ -92,87 +97,62 @@
   {\normalsize \insertdate\par}
 \end{frame}
 
-% ---------------------------------------------------------------- 0
-% dmqft_members.pdf: the collage region cropped from figures/dmqft.pdf (Lingxiao Wang's ERG2026 slide 2)
-\begin{frame}{The DM-QFT collaboration}
-  \vspace{-0.1em}
-  \centerline{\includegraphics[width=1.17\textwidth]{dmqft_members}}
-  \vspace{0.2em}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.48\textwidth}
-      \scriptsize\raggedright
-      \kb{Board}\\[0.2em]
-      \begin{tabular}{@{}l@{\hspace{0.7em}}l@{}}
-        RIKEN & Lingxiao Wang\\
-        Swansea & Gert Aarts\\
-        SJTU & Wei Wang\\
-        TU Wien & Andreas Ipp\\
-        Heidelberg & Jan M.\ Pawlowski\\
-        QMUL & Biagio Lucini\\
-        CUHK Shenzhen & Kai Zhou
-      \end{tabular}
-    \end{column}
-    \begin{column}{0.50\textwidth}
-      \scriptsize\raggedright
-      \kb{Research}\\[0.2em]
-      \kb{Physics of diffusion models}\quad stochastic quantization, statistics of diffusion\\[0.2em]
-      \kb{Lattice simulations}\quad 2D/3D scalars, U(1)/SU($N$) gauge fields, critical sampling\\[0.2em]
-      \kb{Physics-informed kernel methods}
-    \end{column}
-  \end{columns}
+\begin{frame}{Outline}
+  \tableofcontents
 \end{frame}
 
-% ================================================================ Part I
+% ================================================================ Intro
+\section{Critical phenomena and universality}
 % ---------------------------------------------------------------- 1
 \begin{frame}{Critical phenomena across physics}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.42\textwidth}
+    \begin{column}{0.36\textwidth}
       \centering
-      \includegraphics[height=2.35cm]{critical_opalescence_ethane.jpg}\\[0.1em]
-      {\scriptsize ethane: opalescent at $T_c$}
+      \includegraphics[height=2.15cm]{critical_opalescence_ethane.jpg}\\[0.1em]
+      {\scriptsize liquid--gas: ethane at $T_c$}
     \end{column}
-    \begin{column}{0.22\textwidth}
+    \begin{column}{0.31\textwidth}
       \centering
-      \includegraphics[height=2.35cm]{helium_lambda_point.jpg}\\[0.1em]
-      {\scriptsize $^4$He at $T_\lambda$}
+      \includegraphics[height=2.15cm]{gpmv_membrane_critical.png}\\[0.1em]
+      {\scriptsize cell membranes, $d=2$}
     \end{column}
-    \begin{column}{0.33\textwidth}
+    \begin{column}{0.31\textwidth}
       \centering
-      \includegraphics[height=2.35cm]{helium_lambda_cp.png}\\[0.1em]
-      {\scriptsize specific heat of $^4$He}
-    \end{column}
-  \end{columns}
-  \vspace{1.1em}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.40\textwidth}
-      \centering
-      \includegraphics[height=2.35cm]{qcd_phase_diagram_bhalerao.png}\\[0.1em]
+      \includegraphics[height=2.15cm]{qcd_phase_diagram_bhalerao.png}\\[0.1em]
       {\scriptsize QCD: critical end point}
     \end{column}
+  \end{columns}
+  \vspace{1.0em}
+  \begin{columns}[T,onlytextwidth]
     \begin{column}{0.56\textwidth}
+      \centering
+      \includegraphics[height=2.0cm]{picoline_d2o_opalescence.jpg}\\[0.1em]
+      {\scriptsize binary mixture 3-picoline--D$_2$O at $T_c$}
+    \end{column}
+    \begin{column}{0.42\textwidth}
       \footnotesize\raggedright
-      \kb{The same signature every time}\\[0.2em]
+      \kb{Universal features}\\[0.2em]
       no characteristic length, $\xi\to\infty$\\
       fluctuations on every scale\\
-      response diverges as a power law\\
-      $\chi\sim|T-T_c|^{-\gamma}$, $\xi\sim|T-T_c|^{-\nu}$\\
-      \alert{exponents, not $T_c$, carry the physics}
+      power-law singularities at $T_c$\\
+      $\chi\sim|T-T_c|^{-\gamma}$, $\xi\sim|T-T_c|^{-\nu}$
     \end{column}
   \end{columns}
   \refs{%
-    \rtag{Ethane:} S.\ Horstmann, Wikimedia Commons.\quad
-    \rtag{Helium:} A.\ Leitner (1963).\quad
-    \rtag{QCD phase diagram:} R.\ S.\ Bhalerao, doi:10.5170/CERN-2014-001.219.\quad
-    \rtag{QCD critical point:} Stephanov, Rajagopal, Shuryak, PRL 81, 4816 (1998).}
+    \rtag{Ethane:} Horstmann, Wikimedia Commons.\quad
+    \rtag{Membranes:} Gray, Karslake, Machta, Veatch, Biophys.\ J.\ 105, 2751 (2013).\quad
+    \rtag{Mixture:} Kalabi\'nski, Drozd-Rzoska, Rzoska, EPJ E 45, 73 (2022).\quad
+    \rtag{QCD:} Bhalerao, doi:10.5170/CERN-2014-001.219; Stephanov, Rajagopal, Shuryak, PRL 81, 4816 (1998).}
 \end{frame}
 
 % ---------------------------------------------------------------- 2
-\begin{frame}{Universality: different systems, the same numbers}
+\begin{frame}{Universality}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.46\textwidth}
       \centering
       \includegraphics[width=\linewidth]{coexistence_universality.pdf}\\[-0.1em]
-      {\scriptsize eight fluids, one coexistence curve}
+      {\scriptsize eight fluids, one coexistence curve}\\[0.2em]
+      {\normalsize \alert{experimental data}}
     \end{column}
     \begin{column}{0.52\textwidth}
       \centering
@@ -196,10 +176,10 @@
       fluids, mixtures, uniaxial magnets\\
       and the QCD critical end point:\\
       \alert{all 3D Ising}\\
-      superfluid $^4$He: 3D XY, same story
+      cell membranes: 2D Ising, same story
 
       \vspace{0.5em}
-      \kb{One model for all of them}
+      \kb{Lattice $\phi^4$ is the minimal representative of the class}
     \end{column}
   \end{columns}
   \refs{%
@@ -295,49 +275,41 @@
     \rtag{Model H and QCD:} Son, Stephanov, PRD 70, 056001 (2004).}
 \end{frame}
 
+% ================================================================ Part I
+\section{Part I: critical statics from diffusion models}
+\subsection{Diffusion model on the lattice}
 % ---------------------------------------------------------------- 4
-\begin{frame}{Sampling near criticality: a data-driven route}
+\begin{frame}{Generative modeling for lattice field theory}
   \footnotesize\raggedright
   \vspace{-0.4em}
   \kb{Lattice $\phi^4$}\ \ $S[\phi]=\sum_x\big[-2\kappa\sum_{\mu}\phi_x\phi_{x+\hat\mu}+\phi_x^2+\lambda(\phi_x^2-1)^2\big]$, Ising class
+
   \vspace{0.1em}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.52\textwidth}
-      \footnotesize\raggedright
-      \kb{Why Monte Carlo struggles}\\[0.1em]
-      the physics sits in the infrared\\
-      local moves: $\tau\sim L^{z}$, \alert{Anna's talk}\\
-      cluster moves: special models only\\
-      needed: independent configurations
-    \end{column}
-    \begin{column}{0.46\textwidth}
-      \footnotesize\raggedright
-      \kb{Learn the distribution from data}\\[0.1em]
-      input: configurations, \alert{not $S[\phi]$}\\
-      output: independent new samples\\
-      critical physics reproduced?
-    \end{column}
-  \end{columns}
-  \vspace{0.1em}
-  \centering
-  \uncover<2->{%
+  \begin{uncoverenv}<2->
+  \kb{Learn the distribution from data}
+  \vspace{0.2em}
+
+  {\centering
   \begin{tikzpicture}[font=\scriptsize,>=stealth]
     \foreach \t/\i in {0/0,0.01/1,0.03/2,0.08/3,1/4}
-      \node[inner sep=0pt] (p\i) at (1.3*\i,0) {\includegraphics[width=0.9cm]{phi4_diffuse_t\t.png}};
+      \node[inner sep=0pt] (p\i) at (1.75*\i,0) {\includegraphics[width=1.1cm]{phi4_diffuse_t\t.png}};
     \draw[->,thick,burgundy] ([yshift=0.1cm]p0.north west) -- ([yshift=0.1cm]p4.north east)
-      node[midway,above] {add noise until the configuration is forgotten};
+      node[midway,above] {forward: noise erases the configuration, $\phi\to$ Gaussian};
     \draw[<-,thick,Kleinblue] ([yshift=-0.1cm]p0.south west) -- ([yshift=-0.1cm]p4.south east)
-      node[midway,below] {a learned drift removes the noise again: a new configuration};
-  \end{tikzpicture}}
-  \vspace{-0.3em}
-
+      node[midway,below] {reverse: the learned drift $\nabla\log p_t$ turns Gaussian noise into a sample of $e^{-S}$};
+  \end{tikzpicture}\par}
+  \end{uncoverenv}
+  \vspace{0.15em}
   \begin{uncoverenv}<3->
-  {\footnotesize\raggedright
-  \kb{This talk}\ \ \alert{statics}: sampling across the transition, unseen $L$\ \ \alert{dynamics}: Model B\\[0.1em]
-  \kb{Also here}\ \ flows: \alert{Gurtej's talk}\ \ PIKs: \alert{Jan's, Friederike's, Renzo's talks}\par}
+  \kb{This talk}\ \ \alert{statics}: sampling the transition, and volumes never seen\\
+  \phantom{\kb{This talk}}\ \ \alert{dynamics}: Model B from a learned transition kernel
+
+  \vspace{0.2em}
+  \kb{Also here}\ \ RG: \alert{Anna's, Elia's talks}\quad self learning: \alert{Akio's talk}\\
+  \phantom{\kb{Also here}}\ \ flows: \alert{Nils's, Lena's, Simran's talks}\quad annealed DM: \alert{Gurtej's talk}\\
+  \phantom{\kb{Also here}}\ \ PIKs: \alert{Jan's, Friederike's, Renzo's talks}
   \end{uncoverenv}
   \refs{%
-    \rtag{Cluster updates:} Swendsen, Wang, PRL 58, 86 (1987); Wolff, PRL 62, 361 (1989).\quad
     \rtag{Flows:} Albergo, Kanwar, Shanahan, PRD 100, 034515 (2019).\quad
     \rtag{Physics-informed kernels:} Ihssen, Kapust, Pawlowski, arXiv:2510.26678.\quad
     \rtag{Diffusion models on the lattice:} Wang, Aarts, Zhou, JHEP 05, 060 (2024); Aarts et al., MLST 6, 025004 (2025); Zhu et al., JHEP 03, 111 (2026).\quad
@@ -356,19 +328,19 @@
   \end{equation*}
   \vspace{-0.9em}
 
+  \kb{Score matching}\quad minimizer $s_\theta=\nabla_\phi\log p_t$\hfill RGDM: \alert{Yuto's talk}
+  \vspace{-0.3em}
+  \begin{equation*}
+    \mathcal L(\theta)=\Big\langle\big\|\Sigma(t)\,s_\theta(\phi_t,\,t)+\eta\big\|^2\Big\rangle_{t,\phi_0,\eta}
+  \end{equation*}
+  \vspace{-1.0em}
+
+  \onslide<2->
   \kb{Reverse SDE and ODE}\quad same marginals $p_t$; Euler--Maruyama sampler
   \vspace{-0.3em}
   \begin{equation*}
     \rmd\phi=-g^2(t)\,s_\theta(\phi,t)\,\rmd t+g(t)\,\rmd\bar w,\qquad
     \frac{\rmd\phi}{\rmd t}=-\tfrac12 g^2(t)\,s_\theta(\phi,t)
-  \end{equation*}
-  \vspace{-1.0em}
-
-  \onslide<2->
-  \kb{Score matching}\quad minimizer $s=\nabla_\phi\log p_t$; samples only, \alert{never $S[\phi]$}
-  \vspace{-0.3em}
-  \begin{equation*}
-    \mathcal L(\theta)=\Big\langle\big\|\Sigma(t)\,s_\theta\big(\phi_0+\Sigma(t)\eta,\,t\big)+\eta\big\|^2\Big\rangle_{t,\phi_0,\eta}
   \end{equation*}
   \vspace{-1.0em}
 
@@ -388,7 +360,8 @@
 % ---------------------------------------------------------------- 6
 \begin{frame}{Score network and reference configurations}
   \centering
-  \includegraphics[width=0.6\textwidth]{architecture_ncsnpp_v2}
+  \only<1>{\includegraphics[width=0.92\textwidth]{architecture_ncsnpp_v2}}%
+  \only<2->{\includegraphics[width=0.6\textwidth]{architecture_ncsnpp_v2}}
   \vspace{0.1em}
   % left column: the physics (put in by hand vs learned); right column: how it is realised
   \begin{columns}[T,onlytextwidth]
@@ -405,8 +378,7 @@
       \kb{Architecture}\\[0.1em]
       U-Net, $L\to L/8$: reaches the infrared\\
       skip connections keep the ultraviolet\\
-      no dense layer: any $L$, same weights\\
-      diffusion as an RG flow: \alert{Yuto's talk}
+      no dense layer: any $L$, same weights
     \end{column}
   \end{columns}
   % [T] columns pull their content up by 1ex, so the skip must be larger than it looks
@@ -418,7 +390,7 @@
       \kb{Physics learned}\\[0.1em]
       the action $S[\phi]$, never given\\
       the $\phi\to-\phi$ symmetry\\
-      \quad\alert{Satoshi and Jinyang's talk}\\
+      \quad\alert{Jinyang's talk}\\
       critical correlations, which phase
     \end{column}
     \begin{column}{0.50\textwidth}
@@ -437,6 +409,7 @@
     $\kappa_c=0.27088$ (2D, $L=128$), $0.19225$ (3D, $L=64$) from Binder crossings; 3D: Hasenbusch, J.\ Phys.\ A 32, 4851 (1999).}
 \end{frame}
 
+\subsection{Critical scaling from the diffusion model}
 % ---------------------------------------------------------------- 7
 \begin{frame}{Magnetization and action density}
   \centering
@@ -447,7 +420,7 @@
     \begin{column}{0.28\textwidth}
       \centering
       \kb{Symmetric}\\[0.3em]
-      \footnotesize one peak at $\bar\phi=0$\\
+      \footnotesize a single peak at $\bar\phi=0$\\
       contours coincide
     \end{column}
     \begin{column}{0.34\textwidth}
@@ -464,7 +437,7 @@
     \end{column}
   \end{columns}
   \vspace{0.6em}
-  {\footnotesize all three phases right, one defect: the ordered peak is too wide\par}
+  {\footnotesize all three phases right, the sole defect: the ordered peak is too wide\par}
   \refs{%
     \rtag{Cumulants in diffusion models:} Aarts, Habibi, Wang, Zhou, MLST 6, 025004 (2025).\quad
     $\chi=V(\langle\bar\phi^2\rangle-\langle|\bar\phi|\rangle^2)$; contours enclose $20/50/90/98\%$ of the probability mass.}
@@ -477,11 +450,10 @@
       \footnotesize\raggedright
       \kb{Resolve the scales}\\[0.1em]
       $G(k)=\langle|\tilde\phi(k)|^2\rangle$\\
-      one number per $k$,\\
+      a separate number for each $k$,\\
       the loss averages them
 
       \vspace{0.5em}
-      \onslide<2->
       \kb{2D, critical}\\[0.1em]
       short distances first\\
       the infrared last
@@ -498,13 +470,12 @@
     \end{column}
     \begin{column}{0.65\textwidth}
       \centering
-      \onslide<1->
       \includegraphics[width=\linewidth]{2D_kappa=0.2705_prop.pdf}\\[0.2em]
       \includegraphics[width=\linewidth]{3D_kappa=0.1923_prop.pdf}
     \end{column}
   \end{columns}
   \refs{%
-    Left panels log--log, right panels log--linear, zero mode excluded. Each curve is one checkpoint of the same training run, sampled with the reverse SDE.}
+    Left panels log--log, right panels log--linear, zero mode excluded. Each curve is a checkpoint of the same training run, sampled with the reverse SDE.}
 \end{frame}
 
 % ---------------------------------------------------------------- 9
@@ -531,70 +502,31 @@
     \end{column}
     \begin{column}{0.31\textwidth}
       \centering
-      \onslide<2->
       \kb{2D Ising}\\[0.3em]
       \footnotesize \alert{$\eta=1/4$ resolved}\\
       off the free $1/k^2$
     \end{column}
     \begin{column}{0.31\textwidth}
       \centering
-      \onslide<2->
       \kb{3D Ising}\\[0.3em]
       \footnotesize $\eta\simeq0.036$, lines close\\
       DM and HMC coincide
     \end{column}
   \end{columns}
   \vspace{1.0em}
-  \begin{uncoverenv}<2->
   {\centering\footnotesize the interacting fixed point leaves its fingerprint in $\eta$, and the samples carry it\par}
-  \end{uncoverenv}
   \refs{%
     \rtag{Exponents:} Pelissetto, Vicari, Phys.\ Rept.\ 368, 549 (2002); Hasenbusch, J.\ Phys.\ A 32, 4851 (1999).\quad
     Converged models, trained and sampled at the same $L$.}
 \end{frame}
 
+\subsection{Diagnosing the diffusion model}
 % ---------------------------------------------------------------- 10
-\begin{frame}{Diagnostic 1: is the learned drift the force $-\nabla S$?}
-  \centering
-  \includegraphics[width=0.98\textwidth]{score_quality_vs_epoch_L128_3panel_ema}\\[0.2em]
-  {\scriptsize $s_\theta(\phi,t\to0)$ against $-\nabla S[\phi]$: direction, overall error, magnitude}
-  \vspace{0.6em}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.36\textwidth}
-      \footnotesize\raggedright
-      \kb{The test}\\[0.2em]
-      $s_\theta(\phi,t\to0)$ vs.\ $-\nabla S[\phi]$\\
-      on HMC configurations\\
-      no $S$ during training
-    \end{column}
-    \begin{column}{0.31\textwidth}
-      \footnotesize\raggedright
-      \onslide<2->
-      \kb{Direction first}\\[0.2em]
-      cosine $0.9\to0.998$\\
-      within $\sim10^2$ epochs\\
-      same in every phase
-    \end{column}
-    \begin{column}{0.31\textwidth}
-      \footnotesize\raggedright
-      \onslide<3->
-      \kb{Magnitude later}\\[0.2em]
-      $3$--$4\times$ too strong\\
-      $\to1$ by $5\times10^3$ epochs\\
-      \alert{$-\nabla S$ reconstructed}\\
-      from samples alone
-    \end{column}
-  \end{columns}
-  \refs{%
-    2D, $L=128$; the same trends in 3D. The test isolates the network as a function: errors that build up along the reverse trajectory are not seen here.}
-\end{frame}
-
-% ---------------------------------------------------------------- 11
-\begin{frame}{Diagnostic 2: a Metropolis test of the learned drift}
+\begin{frame}{Diagnostic 1: a Metropolis test of the learned drift}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.56\textwidth}
       \small
-      \kb{One step with the learned drift}
+      \kb{A step with the learned drift}
       \vspace{-0.4em}
       \begin{equation*}
         \psi=\phi+h\,s_\theta(\phi,t\to0)+\sqrt{2h}\,\eta
@@ -605,21 +537,18 @@
       \end{equation*}
       \vspace{-0.8em}
 
-      \onslide<2->
-      \kb{What it measures}\\
+      \kb{Acceptance as a local test}\\
       $e^{-S}$ judges the proposal\\
-      near one: the local drift is right\\
+      near 1: the local drift is right\\
       no reverse trajectory involved
 
       \vspace{0.35em}
-      \onslide<3->
       \kb{Result}\\
       \alert{above $65\%$ at every $L\ge8$, every $\kappa$}\\
       $0.85$--$0.91$ on the largest lattices
     \end{column}
     \begin{column}{0.42\textwidth}
       \centering
-      \onslide<3->
       \includegraphics[width=0.78\linewidth]{acceptance_vs_epoch_L128_multi_kappa_ema}\\[-0.1em]
       \includegraphics[width=0.78\linewidth]{acceptance_vs_epoch_3d_L64_multi_kappa_ema}
     \end{column}
@@ -630,12 +559,51 @@
     Step size $h\propto L^{-d}$, chosen where early and late checkpoints differ most.}
 \end{frame}
 
+% ---------------------------------------------------------------- 11
+\begin{frame}{Diagnostic 2: is the learned drift the force $-\nabla S$?}
+  \centering
+  \includegraphics[width=\textwidth]{score_quality_vs_epoch_L128_3panel_ema}\\[0.1em]
+  {\scriptsize $s_\theta(\phi,t\to0)$ against $-\nabla S[\phi]$ on HMC configurations, $S$ never used in training}
+  \vspace{0.3em}
+  % column edges sit on the three axis frames of the figure (47.6, 292.0, 549.6 of 764 pt)
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.062\textwidth}\end{column}
+    \begin{column}{0.320\textwidth}
+      \footnotesize\raggedright
+      \kb{Direction}\\[0.15em]
+      $\dfrac{\langle s_\theta,-\nabla S\rangle}{|s_\theta|\,|\nabla S|}$\\[0.4em]
+      cosine $0.9\to0.998$\\
+      within $\sim10^2$ epochs\\
+      same in every phase
+    \end{column}
+    \begin{column}{0.337\textwidth}
+      \footnotesize\raggedright
+      \kb{Magnitude}\\[0.15em]
+      $\dfrac{|s_\theta|}{|\nabla S|}$\\[0.4em]
+      $3$--$4\times$ too strong\\
+      $\to1$ by $5\times10^3$ epochs\\
+      \alert{$-\nabla S$ reconstructed}\\
+      from samples alone
+    \end{column}
+    \begin{column}{0.281\textwidth}
+      \footnotesize\raggedright
+      \kb{Overall error}\\[0.15em]
+      $\dfrac{|s_\theta+\nabla S|^2}{|\nabla S|^2}$\\[0.4em]
+      falls $10\to10^{-2}$\\
+      zero only if direction\\
+      and magnitude agree
+    \end{column}
+  \end{columns}
+  \refs{%
+    2D, $L=128$; the same trends in 3D. The test isolates the network as a function: errors that build up along the reverse trajectory are not seen here.}
+\end{frame}
+
 % ---------------------------------------------------------------- 12
 \begin{frame}{Diagnostic 3: what is a DM sample worth?}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.43\textwidth}
       \footnotesize\raggedright
-      \kb{Why not autocorrelations}\\[0.1em]
+      \kb{No autocorrelation to measure}\\[0.1em]
       DM samples are independent,\\
       $\tau_{\rm int}=\tfrac12$ even when biased
 
@@ -653,7 +621,7 @@
       \vspace{0.4em}
       \kb{Bias from the HMC reference}\\[0.1em]
       $\delta_O$: difference of the means\\
-      one $N_{\rm eff}$ per observable
+      an $N_{\rm eff}$ for each observable
 
       \vspace{0.4em}
       \kb{Another probe}\\[0.1em]
@@ -662,16 +630,15 @@
     \end{column}
     \begin{column}{0.55\textwidth}
       \centering
-      \onslide<2->
       \includegraphics[width=\linewidth]{ess_mse_vs_epoch_L128_k0.2705_sigma450_ema}\\[0.1em]
       {\scriptsize 2D, $L=128$, critical: $N_{\rm eff}/N_{\DM}$ along training}
 
       \vspace{0.6em}
       \small\raggedright
       \kb{Early}: bias dominated, ratios $\ll1$\\[0.2em]
-      \kb{Late}: \alert{ratios close to one} for scalars\\
+      \kb{Late}: \alert{ratios close to 1} for scalars\\
       and for the propagator at all scales\\[0.2em]
-      \kb{3D critical}: all but $S/V$ reach one,\\
+      \kb{3D critical}: all but $S/V$ reach 1,\\
       the action bias remains
     \end{column}
   \end{columns}
@@ -679,6 +646,7 @@
     Propagator bands: modes averaged over the infrared, intermediate and ultraviolet ranges. Errors from bootstrap; the HMC reference variance includes its autocorrelation.}
 \end{frame}
 
+\subsection{Volume extrapolation}
 % ---------------------------------------------------------------- 13
 \begin{frame}{Train on small lattices, sample a lattice never seen}
   \begin{columns}[T,onlytextwidth]
@@ -694,7 +662,6 @@
     \end{column}
   \end{columns}
   \vspace{0.6em}
-  \begin{uncoverenv}<2->
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.56\textwidth}
       \footnotesize\raggedright
@@ -721,7 +688,6 @@
       \end{tabular}}
     \end{column}
   \end{columns}
-  \end{uncoverenv}
   \refs{%
     \rtag{Multi-lattice generative models:} M\'at\'e, Fleuret, MLST 5, 045053 (2024); Bauer, Kapust, Pawlowski, Temmen, SciPost Phys.\ 19, 077 (2025); Singha et al., ICLR (2025); Zhu et al., JHEP 03, 111 (2026).\quad
     \rtag{Cost of large-volume training:} Abbott et al., EPJA 59, 257 (2023).\quad
@@ -767,122 +733,52 @@
   \refs{3D, $\lambda=0.9$, $L=64$, same training sets as on the previous slide.}
 \end{frame}
 
+% ================================================================ Part II
+\section{Part II: real-time critical dynamics}
+\subsection{Conserved dynamics on the lattice}
 % ---------------------------------------------------------------- 15
-\begin{frame}{Zero mode at the unseen size, and an exact refinement}
-  \centering
-  {\scriptsize
-  \renewcommand{\arraystretch}{0.95}
-  \setlength{\tabcolsep}{5pt}
-  \begin{tabular}{lcccc}
-    \toprule
-    3D, $L=64$, $\kappa=0.1923\simeq\kappa_c$ & $\langle|\bar\phi|\rangle$ & $\chi$ & $\langle S\rangle/V$ & $U_L$ \\
-    \midrule
-    HMC & $0.1165(9)$ & $621(15)$ & $-0.11671(5)$ & $0.516(4)$ \\
-    DM trained at $L=64$ & $0.147(2)$ & $755(49)$ & $-0.0975(3)$ & $0.559(7)$ \\
-    DM $\{4,8\}$ & $0.0287(9)$ & $94(5)$ & $-0.10747(5)$ & $0.24(3)$ \\
-    DM $\{4,8,16\}$ & $0.064(2)$ & $445(22)$ & $-0.1180(1)$ & $0.28(2)$ \\
-    DM $\{4,8,16,32\}$ & $0.100(2)$ & $694(30)$ & $-0.1125(1)$ & $0.44(1)$ \\
-    DM $\{4,8,16,32\}$ $+$ MC, learned drift & $0.126(2)$ & $678(26)$ & $-0.1175(1)$ & $0.528(7)$ \\
-    DM $\{4,8,16,32\}$ $+$ MC, true $-\nabla S$ & \alert{$0.116(2)$} & \alert{$642(23)$} & \alert{$-0.1165(1)$} & \alert{$0.509(7)$} \\
-    \bottomrule
-  \end{tabular}}
-  \vspace{0.8em}
+\begin{frame}{From statics to dynamics}
+  \small
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.49\textwidth}
-      \footnotesize\raggedright
-      \kb{Multi-$L$ beats training at $L=64$}\\[0.1em]
-      $\chi$, $\langle S\rangle/V$, $\langle|\bar\phi|\rangle$ closer to HMC\\
-      infrared learned from four sizes\\
-      \alert{holds up to $2\times$ the largest training $L$}
+    \begin{column}{0.46\textwidth}
+      \kb{Statics}\\[0.15em]
+      Boltzmann weight $e^{-S[\phi]}$\\[0.15em]
+      however it was reached\\[0.15em]
+      \alert{no time}
     \end{column}
-    \begin{column}{0.49\textwidth}
-      \footnotesize\raggedright
-      \kb{DM samples seed an exact chain}\\[0.1em]
-      Metropolis with the learned drift\\
-      $+$ cluster moves, exact for $e^{-S}$\\
-      learned drift: the zero mode stalls\\
-      true force $-\nabla S$: HMC recovered
+    \begin{column}{0.52\textwidth}
+      \kb{Dynamics}\\[0.15em]
+      equation of motion $\partial_t\phi=\mathcal F[\phi,\xi]$\\[0.15em]
+      \alert{stochastic trajectories $\phi(t)$}\\[0.15em]
+      $\mathcal F$ does not depend on $t$
     \end{column}
   \end{columns}
-  \refs{%
-    \rtag{Embedded cluster:} Brower, Tamayo, PRL 62, 1087 (1989).\quad
-    Same chain length for both drifts. DM rows use the field range of the HMC reference; without it the $\chi$ of the $L=64$ model doubles, the multi-$L$ one barely moves.}
-\end{frame}
 
-% ================================================================ Part II
-% ---------------------------------------------------------------- 16
-\begin{frame}{From statics to dynamics: learn one transition kernel}
-  \small
-  \kb{So far}\quad the score of $e^{-S}$: static ensembles, no physical time\\[0.2em]
-  \kb{Now}\quad autonomous stochastic dynamics $\partial_t\phi=\mathcal F[\phi,\xi]$, Markov, no time origin
-
-  \vspace{0.5em}
+  \vspace{0.2em}
   \onslide<2->
-  \kb{Transformation kernel}\quad no explicit $t$ dependence; its law is $p_{\Delta t}(\phi'\,|\,\phi)$
-  \vspace{-0.3em}
-  \begin{equation*}
-    \Delta\phi(t)
-    \equiv\phi(t+\Delta t)-\phi(t)
-    =\mathcal T_{\Delta t}[\phi(t),w]
-    \equiv\int_t^{t+\Delta t}\!\rmd\tau\,
-    \mathcal F[\phi(\tau),\xi(\tau;w)]
-  \end{equation*}
-  \vspace{-0.6em}
-
-  \onslide<3->
-  \kb{Exact composition}
+  \kb{Transition kernel}\quad \alert{$p_{\Delta t}(\phi'\,|\,\phi)$}, the probability to go from $\phi$ to $\phi'$ in $\Delta t$
+  \vspace{-0.4em}
   \begin{center}
-    $\begin{aligned}
-    \phi_{j+1}
-    &=\phi_j+\mathcal T_{\Delta t}[\phi_j,w_j],
-    &&j=0,\ldots,n-1,\\
-    \phi_0&=\phi(t),
-    &\phi_n&=\phi(t+n\Delta t).
-    \end{aligned}$\\[0.5em]
-    Chapman--Kolmogorov: \alert{one interval fixes every multiple of $\Delta t$},\\ in and out of equilibrium
+    \begin{tikzpicture}[>=stealth]
+      \node (a) at (0,0) {$\phi(t)$};
+      \node (b) at (3.0,0) {$\phi(t+\Delta t)$};
+      \node (c) at (6.0,0) {$\phi(t+2\Delta t)$};
+      \node (d) at (8.4,0) {$\cdots$};
+      \foreach \u/\v in {a/b,b/c,c/d}
+        \draw[->,thick,Kleinblue] (\u) -- (\v) node[midway,above,font=\footnotesize] {$p_{\Delta t}$};
+    \end{tikzpicture}
   \end{center}
+  \vspace{-0.5em}
+  \onslide<3->
+  \kb{Learned transition kernel}\\[0.1em]
+  \alert{pairs} $(\phi_t,\phi_{t+\Delta t})$ suffice, from a simulation or an experiment\\[0.05em]
+  \alert{each kernel step spans $\Delta t\gg\delta t$}, the step of a direct integrator
   \refs{%
-    Pairs $(\phi_t,\phi_{t+\Delta t})$ are direct samples of the kernel, from a simulation or an experiment.
+    \rtag{Chapman--Kolmogorov:} $p_{2\Delta t}(\phi'|\phi)=\int\rmd\phi''\,p_{\Delta t}(\phi'|\phi'')\,p_{\Delta t}(\phi''|\phi)$.\quad
     Colored noise: enlarge the state, $X=(\phi,\eta)$, and the joint kernel composes again.}
 \end{frame}
 
-% ---------------------------------------------------------------- 17
-\begin{frame}{Conditional diffusion draws one step}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.53\textwidth}
-      \centering
-      \includegraphics[width=\linewidth]{schematic}\\[0.3em]
-      {\normalsize $\Delta\phi\sim p_\theta(\,\cdot\mid\phi_t)$
-      \qquad
-      $\phi_{t+\Delta t}=\phi_t+\Delta\phi$}
-    \end{column}
-    \begin{column}{0.45\textwidth}
-      \footnotesize\raggedright
-      \kb{Condition}\\[0.1em]
-      present field $\phi_t$ as a clean input
-
-      \vspace{0.35em}
-      \kb{Target}\\[0.1em]
-      the increment $\Delta\phi$, diffused\\
-      and denoised as in Part I
-
-      \vspace{0.35em}
-      \kb{Physics learned}\\[0.1em]
-      $p(\Delta\phi\,|\,\phi_t)$ from pairs alone\\
-      \alert{no drift, noise or free energy}
-
-      \vspace{0.35em}
-      \kb{Physics built in}\\[0.1em]
-      $\sum_x\Delta\phi_x=0$ by projection\\
-      at every step, $M$ conserved exactly
-    \end{column}
-  \end{columns}
-  \refs{%
-    \rtag{Fast ODE solver:} Zheng et al., DPM-Solver-v3, NeurIPS (2023).\quad
-    Same U-Net as in Part I with $\phi_t$ as a second input channel; one kernel step costs a few dozen network calls.}
-\end{frame}
-
-% ---------------------------------------------------------------- 18
+% ---------------------------------------------------------------- 16
 \begin{frame}{Model B: conserved dynamics}
   \begin{center}
     2D conserved $\phi^4$ field
@@ -903,6 +799,8 @@
     \begin{column}{0.32\textwidth}
       \centering
       \begin{tikzpicture}[font=\scriptsize,>=stealth]
+        % fixes the bounding box below the overlay-2 label, so slide 1 does not jump
+        \path (0,-1.1);
         \draw[->,thick] (-1.65,0.25) -- (1.72,0.25) node[below] {$\phi$};
         \draw[->,thick] (0,0.08) -- (0,1.75) node[left] {$V(\phi)$};
         \draw[very thick,Kleinblue,domain=-1.5:1.5,samples=80,smooth]
@@ -910,23 +808,24 @@
         \node[Kleinblue] at (0.62,1.55) {$r<0$};
         \fill[burgundy] (-1,0.25) circle (0.075);
         \fill[burgundy] (1,0.25) circle (0.075);
-        \draw[->,burgundy,thick,decorate,
+        % overlay 2: the conserved exchange; TikZ keeps the bounding box on slide 1
+        \draw<2->[->,burgundy,thick,decorate,
               decoration={snake,amplitude=0.3mm,segment length=1.4mm,
                           pre length=0.8mm,post length=1.5mm}]
           (-0.98,0.16) .. controls (-0.98,-0.08) and (-0.84,-0.12) .. (-0.55,-0.12)
           node[midway,below=1pt] {$\Delta\phi_i$};
-        \draw[->,burgundy,thick,decorate,
+        \draw<2->[->,burgundy,thick,decorate,
               decoration={snake,amplitude=0.3mm,segment length=1.4mm,
                           pre length=0.8mm,post length=1.5mm}]
           (0.98,0.16) .. controls (0.98,-0.08) and (0.84,-0.12) .. (0.55,-0.12)
           node[midway,below=1pt] {$\Delta\phi_j$};
-        \node at (0,-0.82) {$\Delta\phi_i=-\Delta\phi_j$};
+        \node<2-> at (0,-0.82) {$\Delta\phi_i=-\Delta\phi_j$};
       \end{tikzpicture}
     \end{column}
   \end{columns}
   % align 在 minipage 末尾会丢掉 belowdisplayskip，没有这行下一栏会压到公式
   \vspace{0.6em}
-  \begin{uncoverenv}<2->
+  \begin{uncoverenv}<3->
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.42\textwidth}
       \centering
@@ -947,9 +846,6 @@
       $\gg$ a solver step
     \end{column}
   \end{columns}
-  \vspace{0.6em}
-  {\centering\footnotesize
-    $-\Gamma\nabla^2$ is a physics-informed kernel: \alert{Jan's and Renzo's talks}\par}
   \end{uncoverenv}
   \refs{%
     \rtag{Model B:} Hohenberg, Halperin, Rev.\ Mod.\ Phys.\ 49, 435 (1977).\quad
@@ -957,11 +853,55 @@
     \rtag{Kernel:} $-\Gamma\nabla^2$ in front of $\delta F/\delta\phi$ leaves the equilibrium $e^{-F/T}$ unchanged and sets the dynamics.}
 \end{frame}
 
-% ---------------------------------------------------------------- 19
+% ---------------------------------------------------------------- 17
+\begin{frame}{Conditional diffusion as the transition kernel}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.53\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{schematic}\\[0.3em]
+      {\normalsize $\Delta\phi\sim p_\theta(\,\cdot\mid\phi_t)$
+      \qquad
+      $\phi_{t+\Delta t}=\phi_t+\Delta\phi$}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \footnotesize\raggedright
+      \kb{Condition}\\[0.1em]
+      the present field $\phi_t$
+
+      \vspace{0.25em}
+      \kb{Target}\\[0.1em]
+      the increment $\Delta\phi$, diffused\\
+      and denoised as in Part I
+
+      \vspace{0.25em}
+      \kb{Physics learned}\\[0.1em]
+      $p(\Delta\phi\,|\,\phi_t)$ from pairs alone\\
+      \alert{no drift, noise or free energy}
+
+      \vspace{0.25em}
+      \kb{Physics built in}\\[0.1em]
+      $\sum_x\Delta\phi_x=0$ by projection\\
+      at every step, $M$ conserved exactly
+    \end{column}
+  \end{columns}
+  \vspace{0.2em}
+  \begin{uncoverenv}<2->
+  {\footnotesize\raggedright
+  \kb{Projection, three times}\quad $P\,v=v-\tfrac{1}{V}\sum_x v_x$, no retraining\\[0.3em]
+  \makebox[\linewidth]{$\rmd\Delta\phi_s=-g^2(s)\,\alert{P}\,s_\theta(\Delta\phi_s;\phi_t,s)\,\rmd s+g(s)\,\alert{P}\,\rmd\bar w,\qquad
+    \Delta\phi_{s=1}=\alert{P}\,\Sigma(1)\,\eta$}\\[0.3em]
+  initial noise, score, noise increments: $\sum_x\Delta\phi_x=0$ exactly at every step\par}
+  \end{uncoverenv}
+  \refs{%
+    \rtag{Fast ODE solver:} Zheng et al., DPM-Solver-v3, NeurIPS (2023).\quad
+    Same U-Net as in Part I with $\phi_t$ as a second input channel; each kernel step costs a few dozen network calls.}
+\end{frame}
+
+% ---------------------------------------------------------------- 18
 % pair_*.png: one sample of each recipe below, evolved with SOSRA over Δt=10,
 % colour scale RdBu ±1.6 (coarsening, L=64, ℓ=8, w=1.5, A=1.3, η=0.2) and ±2.2 (critical, L=32, Z=0.7, m²=0.2, M=0.4)
 \newcommand{\pairpanel}[1]{\raisebox{-.5\height}{\includegraphics[width=1.0cm]{#1}}}
-\begin{frame}{What the kernel is trained on}
+\begin{frame}{Training data for the kernel}
   \footnotesize\raggedright
   \vspace{-0.2em}
   \begin{columns}[T,onlytextwidth]
@@ -1021,7 +961,8 @@
     $Z$ log-uniform in $[0.05,10]$, $m^2\in[0,0.8]$, $M\in[-0.9,0.9]$; $\ell$ log-uniform in $[2,L/3]$, $w\in[0.7,3]$, $A\in[0.8,1.8]$, $\eta\in[0.05,0.35]$, $1/8$ pure noise; $51200$ pairs per $L$.}
 \end{frame}
 
-% ---------------------------------------------------------------- 20
+\subsection{Dynamic critical scaling}
+% ---------------------------------------------------------------- 19
 \begin{frame}{Equilibrium and nonequilibrium evolution}
   \begin{columns}[T]
     \begin{column}{0.30\textwidth}
@@ -1051,35 +992,30 @@
   \end{columns}
 \end{frame}
 
-% ---------------------------------------------------------------- 21
-\begin{frame}{Every mode relaxes at its own rate}
+% ---------------------------------------------------------------- 20
+\begin{frame}{Mode-resolved two-time correlations}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.46\textwidth}
       \footnotesize\raggedright
       \kb{Two-time correlation $\rho_n(\Delta t)$}\\[0.1em]
       mode $k_n$ at $t$ against $t+\Delta t$,\\
-      on the equilibrium chain,\\
-      averaged over time origins
+      averaged over $t$ along the chain
 
-      \vspace{0.5em}
-      \onslide<2->
+      \vspace{0.3em}
       \kb{Conserved dynamics is slow}\\[0.1em]
       $\tau_n\propto k_n^{-z}$ with $z\simeq4$:\\
       the softest mode outlives $n=4$\\
       by two orders of magnitude
 
-      \vspace{0.5em}
-      \onslide<3->
+      \vspace{0.3em}
       \kb{Iterated kernel against SOSRA}\\[0.1em]
       lines: direct integration\\
-      markers: the kernel, one step $=10$\\
+      markers: kernel, $\Delta t=10$ per step\\
       \alert{the same curve for every mode}\\
-      over the whole range of lags\\
-      next: read off $\tau_n$, test $\tau_n\propto k_n^{-z}$
+      then read off $\tau_n$, test $\tau_n\propto k_n^{-z}$
     \end{column}
     \begin{column}{0.52\textwidth}
       \centering
-      \onslide<1->
       \includegraphics[width=\linewidth]{rho_L32}\\[0.1em]
       {\scriptsize 2D, $L=32$, critical, diagonal modes $n=1$--$4$}
     \end{column}
@@ -1088,7 +1024,7 @@
     Time origins along the $t=2000$ equilibrium chain of the previous slide. Errors: leave-one-trajectory-out jackknife.}
 \end{frame}
 
-% ---------------------------------------------------------------- 22
+% ---------------------------------------------------------------- 21
 \begin{frame}{The critical exponent emerges}
   \begin{columns}[T]
     \begin{column}{0.44\textwidth}
@@ -1108,9 +1044,8 @@
         \rho_n(\Delta t)=f(\Delta t/\tau_n),\qquad
         \tau_n\propto\widehat k_n^{-z}
       \end{equation*}
-      all modes on one curve
+      all modes on a common curve
 
-      \onslide<2->
       \kb{Fits at $L=32$}
 
       \alert{$\bm{z_{\rm DM}=3.792(19)}$}
@@ -1120,7 +1055,6 @@
       exact: $z=4-\eta=3.75$
     \end{column}
     \begin{column}{0.54\textwidth}
-      \onslide<1->
       \includegraphics[width=0.94\linewidth]{collapse_dm_L32}
       {\fontsize{6}{7}\selectfont
       \textcolor{Kleinblue}{$z=4-\eta=15/4=3.75$}. \rtag{Exact.} Halperin et al., PRB 10, 139 (1974).\\
@@ -1133,7 +1067,7 @@
   \end{columns}
 \end{frame}
 
-% ---------------------------------------------------------------- 23
+% ---------------------------------------------------------------- 22
 \begin{frame}{Beyond the exponent: the scaling function}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.50\textwidth}
@@ -1153,7 +1087,6 @@
       $\Gamma_0=\widehat k_n^2/G_n$,\quad $r=\Gamma_0\tau_n\simeq1.8$
 
       \vspace{0.4em}
-      \onslide<2->
       \kb{Long times: a slower single rate}\\[0.1em]
       $\lambda_0\simeq0.27$, seven times below $r$\\
       detailed balance: $\rho_n$ is a positive\\
@@ -1161,7 +1094,7 @@
       only fall, from $r$ to the gap $\lambda_0$
 
       \vspace{0.4em}
-      \kb{All four modes on one curve}\\[0.1em]
+      \kb{All four modes on a common curve}\\[0.1em]
       \alert{the whole function is reproduced},\\
       not only $z$. SOSRA has the tail too
     \end{column}
@@ -1170,31 +1103,31 @@
     Dashed: $\lambda_0+1/(2x)$. Dash-dotted: fit $f(x)=e^{-\lambda_0x}(1+ax)^{-b}$ with the sum rule $\lambda_0+ab=r$, $b\simeq\tfrac12$. The direct SOSRA dynamics gives the same curve within errors.}
 \end{frame}
 
-% ---------------------------------------------------------------- 24
-\begin{frame}{One kernel step, every mode at once}
+% ---------------------------------------------------------------- 23
+\begin{frame}{Single-step test of the transition kernel}
   \centering
-  \includegraphics[width=0.94\textwidth]{one_step_diagonal_combined}\\[0.1em]
-  {\scriptsize $\rho_n(\Delta t)$ after one kernel step from equilibrium fields, against the lattice momentum $\widehat k$}
-  \vspace{0.4em}
+  \includegraphics[width=0.88\textwidth]{one_step_diagonal_combined}\\[0.1em]
+  {\scriptsize $\rho_n(\Delta t)$ after one kernel step from equilibrium fields, against $\widehat k$}
+  \vspace{0.2em}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.34\textwidth}
       \footnotesize\raggedright
       \kb{The kernel alone}\\[0.1em]
       no error accumulates\\
-      all modes in one plot
+      all modes in a single plot
     \end{column}
     \begin{column}{0.32\textwidth}
       \footnotesize\raggedright
       \kb{Two intervals}\\[0.1em]
-      $\Delta t=0.5$: the fast modes\\
-      $\Delta t=10$: the slow modes\\
+      $\Delta t=0.5$: fast modes\\
+      $\Delta t=10$: slow modes\\
       the interval is a choice
     \end{column}
     \begin{column}{0.32\textwidth}
       \footnotesize\raggedright
       \kb{Two sizes}\\[0.1em]
-      kernels from $L=32$ and\\
-      from $L=8,16,32$\\
+      kernels from $L=32$\\
+      and from $L=8,16,32$\\
       \alert{both right at $L=64$},\\
       a size neither has seen
     \end{column}
@@ -1203,7 +1136,7 @@
     Circles SOSRA, squares the single-size kernel, triangles the multi-size kernel. Filled markers $\Delta t=0.5$, open markers $\Delta t=10$.}
 \end{frame}
 
-% ---------------------------------------------------------------- 25
+% ---------------------------------------------------------------- 24
 \begin{frame}{Prediction on unseen $L=64$}
   \begin{columns}[T]
     \begin{column}{0.44\textwidth}
@@ -1215,7 +1148,6 @@
         no $L=64$ trajectory ever seen
       \end{center}
 
-      \onslide<2->
       \kb{Fits at $L=64$}
 
       \alert{$\bm{z_{\rm DM}=3.855(21)}$}
@@ -1223,28 +1155,39 @@
       \alert{$\bm{z_{\rm Model\,B}=3.867(23)}$}
 
       \vspace{0.6em}
-      \kb{Finite-size drift}
+      \kb{As fast as the best direct solver}
 
-      $L=32\to64$: $3.78\to3.86$\\
-      DM and the direct integrator\\
-      move together
-
-      \vspace{0.6em}
-      \kb{Cost}
-
-      as fast as the best direct solver
+      \scriptsize
+      512 trajectories, $t=100$, GH200, matched accuracy
     \end{column}
     \begin{column}{0.54\textwidth}
       \centering
-      \onslide<1->
-      \includegraphics[width=\linewidth,height=0.62\textheight,keepaspectratio]{reverse_nfe_tau_L64}
+      \includegraphics[width=\linewidth,height=0.37\textheight,keepaspectratio]{reverse_nfe_tau_L64}
       \par\vspace{0.3em}
-      {\scriptsize relaxation time of every mode at $L=64$: direct integrator, learned kernel with the reverse SDE, and with the fast ODE solver\par}
+      {\raggedright
+        \scriptsize
+        \setlength{\tabcolsep}{2pt}
+        \begin{tabular}{lcc}
+          \toprule
+          & \multicolumn{2}{c}{Wall time (s)} \\
+          \cmidrule(lr){2-3}
+          Method & equil. & noneq. \\
+          \midrule
+          \alert{DPM-Solver-v3 (This work)} & $3.24$ & $3.26$ \\
+          SOSRA (This work) & $1.30$ & $3.28$ \\
+          SOSRA (StochasticDiffEq.jl) & $12.36$ & $30.67$ \\
+          ShARK (Diffrax) & $5.56$ & $17.76$ \\
+          EM (Diffrax) & $19.45$ & $38.75$ \\
+          EM (other GPU/CPU solvers) & $>100$ & $>200$ \\
+          \bottomrule
+        \end{tabular}
+      \par}
     \end{column}
   \end{columns}
 \end{frame}
 
-% ---------------------------------------------------------------- 26
+\subsection{Phase separation}
+% ---------------------------------------------------------------- 25
 \begin{frame}{Phase separation on unseen $L=128$}
   \begin{columns}[T]
     \begin{column}{0.44\textwidth}
@@ -1296,99 +1239,26 @@
   \end{columns}
 \end{frame}
 
-% ---------------------------------------------------------------- 27
-\begin{frame}{Sharp domain walls: Porod's law}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.48\textwidth}
-      \footnotesize\raggedright
-      \kb{Structure factor of the sign field}
-      \vspace{-0.5em}
-      \begin{equation*}
-        S(k,t)=\tfrac1V\big\langle|\sigma(k,t)|^2\big\rangle
-      \end{equation*}
-      \vspace{-0.9em}
-
-      the Fourier transform of $C(r,t)$
-
-      \vspace{0.3em}
-      \kb{One length again}
-      \vspace{-0.5em}
-      \begin{equation*}
-        S(k,t)=L(t)^2\,h\big(kL(t)\big)
-      \end{equation*}
-      \vspace{-0.8em}
-
-      \kb{Porod tail}\\[0.1em]
-      sharp walls between domains give\\
-      $h(x)\propto x^{-(d+1)}=x^{-3}$ at large $x$
-
-      \vspace{0.4em}
-      \kb{Generated fields at $L=128$}\\[0.1em]
-      $t=100$--$1000$ collapse on one curve\\
-      \alert{the tail follows $k^{-3}$}\\
-      a size the kernel never saw
-    \end{column}
-    \begin{column}{0.50\textwidth}
-      \centering
-      \includegraphics[width=\linewidth]{sk_collapse_dm_L128}\\[0.1em]
-      {\scriptsize the DM trajectory of the previous slide, rescaled by its own $L(t)$}
-    \end{column}
-  \end{columns}
-  \refs{%
-    \rtag{Porod law:} Porod, Kolloid-Z.\ 124, 83 (1951); Bray, Adv.\ Phys.\ 43, 357 (1994).\quad
-    $h$ is the 2D Fourier transform of $g$. The peak near $kL(t)\simeq2$--$3$ marks the domain spacing.}
-\end{frame}
-
-% ---------------------------------------------------------------- 28
+% ---------------------------------------------------------------- 26
 \begin{frame}[c]{Summary}
   \relax % keep beamer from reading the next brace group as a subtitle
   {\centering\large Learned scores $\longrightarrow$ critical statics and critical dynamics\par}
-  \vspace{0.3em}
+  \vspace{1.4em}
   \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.33\textwidth}
+    \begin{column}{0.5\textwidth}
       \centering
-      {\small $\phi^4$ in 2D and 3D}\\[0.4em]
-      {\alert{\large all three regimes}}\\[0.3em]
-      {\scriptsize $\eta$ resolved, $P(\bar\phi,s)$ right\\ bias only in the zero mode}
+      {\small Statics}\\[0.5em]
+      {\alert{\large $s_\theta\to-\nabla S$}}\\[0.6em]
+      {\small $\phi^4$ in 2D and 3D, all three regimes\\ unseen $L$: $\{4,8,16,32\}\Rightarrow64$}
     \end{column}
-    \begin{column}{0.33\textwidth}
+    \begin{column}{0.5\textwidth}
       \centering
-      {\small Diagnostics}\\[0.4em]
-      {\alert{\large $s_\theta\to-\nabla S$}}\\[0.3em]
-      {\scriptsize $-\nabla S$ from samples alone\\ Metropolis accepts it}
-    \end{column}
-    \begin{column}{0.33\textwidth}
-      \centering
-      {\small Unseen volumes}\\[0.4em]
-      {\alert{\large $\{4,8,16,32\}\Rightarrow64$}}\\[0.3em]
-      {\scriptsize beats training at $L=64$\\ exact refinement $\to$ HMC}
+      {\small Dynamics}\\[0.5em]
+      {\alert{\large $z=3.792(19)$,\quad $L(t)\propto t^{1/3}$}}\\[0.6em]
+      {\small Model B from pairs alone\\ lattices beyond the training size}
     \end{column}
   \end{columns}
-  \vspace{1.1em}
-  \begin{columns}[T,onlytextwidth]
-    \begin{column}{0.33\textwidth}
-      \centering
-      {\small Transition kernel}\\[0.4em]
-      {\alert{\large $z_{\rm DM}=3.792(19)$}}\\[0.3em]
-      {\scriptsize exact $z=3.75$\\ pairs only, no equations}
-    \end{column}
-    \begin{column}{0.33\textwidth}
-      \centering
-      {\small Beyond training sizes}\\[0.4em]
-      {\alert{\large $L=64$, $L=128$}}\\[0.3em]
-      {\scriptsize $z=3.855(21)$ vs.\ $3.867(23)$\\ as fast as direct solvers}
-    \end{column}
-    \begin{column}{0.33\textwidth}
-      \centering
-      {\small Phase separation}\\[0.4em]
-      {\alert{\large $L(t)\propto t^{1/3}$}}\\[0.3em]
-      {\scriptsize within $2\%$ of Model B\\ collapse, Porod tail $k^{-3}$}
-    \end{column}
-  \end{columns}
-  \vspace{0.7em}
-  {\centering\small
-    Outlook: noise schedules for the zero mode (EDM2, RG-inspired),\\ diffusion samples as seeds for exact MC, Model H, gauge fields\par}
-  \vspace{0.4em}
+  \vspace{2.6em}
   {\centering
     {\large Thank you!}\par}
 \end{frame}

@@ -4,18 +4,17 @@ include(joinpath(@__DIR__, "..", "solver", "ModelB_fixed.jl"))
 
 root = normpath(joinpath(@__DIR__, ".."))
 run = joinpath(root, "results", "multiL")
-Nensemble = 512
 κ, λ, γ, T, dt = 0.340340f0, 1.0f0, 1.0f0, 1.0f0, 0.002f0
 times = vcat(collect(0.5:0.5:50.0), collect(60.0:10.0:1000.0))
 sources = (
+    # L32 的 DM 链是 2048 条（512+1536 合并批），SOSRA 参照与之同样本数（2026-09-21 起）
     (
-        32,
-        # 现名 hmc_L32_N2048_t0.npz；参考轨迹只用了前 512 个初态（原 N512 文件）
+        32, 2048,
         joinpath(run, "hmc_L32_N2048_t0.npz"),
-        UInt64(2026085101),
+        UInt64(2026092201),
     ),
     (
-        64,
+        64, 512,
         joinpath(
             root, "runs",
             "modelBcond_L32_k0.34034_l1.0_t10_ncsnpp_hmc_noskip",
@@ -25,7 +24,7 @@ sources = (
         UInt64(2026085201),
     ),
     (
-        128,
+        128, 512,
         joinpath(run, "hmc_L128_N512_t0.npz"),
         UInt64(2026085301),
     ),
@@ -36,7 +35,7 @@ function time_tag(time)
     return endswith(text, ".0") ? text[1:end-2] : replace(text, "." => "p")
 end
 
-for (L, source, seed) in sources
+for (L, Nensemble, source, seed) in sources
     !isempty(ARGS) && L ∉ parse.(Int, ARGS) && continue
     output = joinpath(root, "results", "modelb_reference", "multiL_L$L.h5")
     if ispath(output)

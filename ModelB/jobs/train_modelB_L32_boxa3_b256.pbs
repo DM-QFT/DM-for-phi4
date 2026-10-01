@@ -1,0 +1,46 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=30:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_boxa3
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_L32_boxa3_b256.pbs.log
+
+# 盒 A 1024000 对，从 boxa2 的 epoch=10000 权重续训 2000 epoch（约 17 h）。
+set -euo pipefail
+
+cd /work/gw97/w97000/project/DM/ModelB
+export PATH=/work/gw97/w97000/envs/nenv2/bin:$PATH
+
+echo "Job ID: ${PBS_JOBID}"
+echo "Node: $(hostname)"
+echo "Start: $(date '+%F %T')"
+nvidia-smi -L
+
+COND=trainingdata/modelB_L32_Ne1024000_corrgaussboxa3_l1_kappa_0.340340_t0_seed2026092101.jld2
+TARGET=trainingdata/modelB_L32_Ne1024000_corrgaussboxa3_l1_kappa_0.340340_t10_dt0.002_seed2026092103.jld2
+INIT=runs/modelBcond_L32_k0.34034_l1.0_t10_ncsnpp_corrgauss_boxa2_b128_noskip/models/epoch=10000.ckpt
+
+if [[ ! -f ${TARGET} || ! -f ${COND} ]]; then
+    rm -f "${COND}" "${TARGET}"
+    /work/gw97/w97000/.local/bin/julia \
+        data_generation/run_l32_l1_k0p340340_corrgauss_boxa3_t10.jl
+fi
+
+PYTHONUNBUFFERED=1 python -u train/train_modelB_cond.py \
+    --L 32 \
+    --kappa 0.34034 --lam 1.0 --horizon 10 \
+    --sigma 250 --lr 0.001 --batch_size 256 \
+    --epochs 2000 --ema_start 0 --num_ckpts 100 \
+    --device cuda:0 --cuda_graph \
+    --init_ckpt "${INIT}" \
+    --output_suffix _corrgauss_boxa3_b256_noskip \
+    --cond_path "${COND}" \
+    --target_path "${TARGET}"
+
+PYTHONUNBUFFERED=1 python -u sample/run_chains.py boxa3
+MODELB_CHAIN_RUN=runs/modelBcond_L32_k0.34034_l1.0_t10_ncsnpp_corrgauss_boxa3_b256_noskip \
+    python -u analysis/chain_data.py
+
+echo "Finish: $(date '+%F %T')"

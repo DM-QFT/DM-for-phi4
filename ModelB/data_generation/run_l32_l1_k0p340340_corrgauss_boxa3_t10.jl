@@ -1,0 +1,73 @@
+using CUDA, FFTW, JLD2, Random, Statistics
+
+include(joinpath(@__DIR__, "..", "solver", "ModelB_fixed.jl"))
+
+# 区间同 boxa2。样本量取 1024000：留出集实测每对被看约 1000 次后训练与留出损失分叉，
+# 2000 个 epoch 即每对看 2000 次。
+L, Nensemble = 32, 1024000
+κ, λ, γ, T, dt, horizon = 0.340340f0, 1.0f0, 1.0f0, 1.0f0, 0.002f0, 10.0f0
+warmup, warmup_dt = 1.0f0, 0.0001f0
+initial_seed, noise_seed = UInt64(2026092101), UInt64(2026092103)
+Z_range, m2_range, M_range = (0.45f0, 1.15f0), (0.0f0, 0.8f0), (-0.8f0, 0.8f0)
+dir = normpath(joinpath(@__DIR__, "..", "trainingdata"))
+condition = joinpath(
+    dir, "modelB_L32_Ne1024000_corrgaussboxa3_l1_kappa_0.340340_t0_seed2026092101.jld2",
+)
+target = joinpath(
+    dir,
+    "modelB_L32_Ne1024000_corrgaussboxa3_l1_kappa_0.340340_t10_dt0.002_seed2026092103.jld2",
+)
+@assert !ispath(condition) && !ispath(target)
+mkpath(dir)
+
+q = 4.0f0 .* sinpi.(Float32.(0:L-1) ./ L) .^ 2
+q2 = reshape(q, L, 1) .+ reshape(q, 1, L)
+rng = Xoshiro(initial_seed)
+Z = Z_range[1] .+ (Z_range[2] - Z_range[1]) .* rand(rng, Float32, Nensemble)
+m2 = m2_range[1] .+ (m2_range[2] - m2_range[1]) .* rand(rng, Float32, Nensemble)
+M = M_range[1] .+ (M_range[2] - M_range[1]) .* rand(rng, Float32, Nensemble)
+CUDA.seed!(initial_seed)
+F = fft(CUDA.randn(Float32, L, L, Nensemble), (1, 2))
+F ./= sqrt.(
+    reshape(CuArray(q2), L, L, 1) .* reshape(CuArray(Z), 1, 1, :) .+
+    reshape(CuArray(m2), 1, 1, :)
+)
+F[1, 1, :] .= 0
+u = real.(ifft(F, (1, 2)))
+u .+= reshape(CuArray(M), 1, 1, :)
+cfgs = Array(u)
+F = nothing
+CUDA.reclaim()
+M0 = vec(mean(Float64, cfgs; dims=(1, 2)))
+@assert maximum(abs, M0 - M) < 1.0e-5
+jldsave(
+    condition;
+    cfgs, L, Nensemble, kappa=κ, lambda=λ,
+    propagator_Z=Z, propagator_m2=m2, constant_mean=M,
+    Z_range, m2_range, M_range, initial_seed,
+)
+
+u = nothing
+CUDA.reclaim()
+# 求解器 kernel 用 Int32 线性索引且 links 是 u 的 4 倍大，L=32 时单次最多 524287 个构型
+phi0, cfgs = cfgs, similar(cfgs)
+seconds = @elapsed for (i, r) in enumerate((1:Nensemble÷2, Nensemble÷2+1:Nensemble))
+    v = CuArray(phi0[:, :, r])
+    buffers = modelb_fixed_buffers(v; seed=noise_seed + UInt64(i - 1))
+    modelB_2d_fixed!(v, buffers; γ, T, κ, λ, dt=warmup_dt, tspan=(0.0f0, warmup))
+    modelB_2d_fixed!(v, buffers; γ, T, κ, λ, dt, tspan=(warmup, horizon))
+    CUDA.synchronize()
+    @assert all(isfinite, v)
+    cfgs[:, :, r] = Array(v)
+    v = nothing
+    buffers = nothing
+    CUDA.reclaim()
+end
+drift = vec(mean(Float64, cfgs; dims=(1, 2))) - M0
+jldsave(
+    target;
+    cfgs, L, Nensemble, time=horizon, kappa=κ, lambda=λ, gamma=γ,
+    temperature=T, dt, warmup, warmup_dt, noise_seed, source_path=condition,
+    max_abs_conservation_drift=maximum(abs, drift),
+)
+println("time=$(round(seconds; digits=1)) s, max|ΔM|=$(maximum(abs, drift))")

@@ -44,7 +44,8 @@ class ConditionalDiffusionModel(DiffusionModel):
                  cond_norm_min=None, cond_norm_max=None,
                  kappa=None, lam=None, horizon=None,
                  cond_data_path=None, target_data_path=None, run_dir=None,
-                 in_channels=2, z2_aug=True):
+                 in_channels=2, z2_aug=True, lr_min=None, channels=None):
+        # channels 只为写进 hparams，采样端据此重建同宽度的 NCSNppCond2D
         super().__init__(
             score_model, sigma=sigma, lr=lr, L=L,
             ema_decay=ema_decay, ema_start_epoch=ema_start_epoch,
@@ -54,7 +55,17 @@ class ConditionalDiffusionModel(DiffusionModel):
         self.cond_norm_min = cond_norm_min
         self.cond_norm_max = cond_norm_max
         self.z2_aug = z2_aug
+        self.lr_min = lr if lr_min is None else lr_min
         self._ema_parameters = tuple(self.score_model.parameters())
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, fused=True)
+        # 逐步余弦退火到 lr_min；lr_min=lr 即原来的恒定学习率
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=self.trainer.estimated_stepping_batches, eta_min=self.lr_min,
+        )
+        return {"optimizer": optimizer,
+                "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
 
     def loss_fn(self, x, eps=1e-5):
         if self.z2_aug and self.training:
@@ -185,8 +196,10 @@ class ModelBPairDataModule(pl.LightningDataModule):
     """Load every paired field and normalize [dphi, phi0] to [-1, 1]."""
 
     def __init__(self, cond_path, target_path, batch_size=64, device="cuda:0",
-                 expected_L=None, chunk_size=256):
+                 expected_L=None, chunk_size=256, fixed_norm=None):
         super().__init__()
+        # 续训时沿用 checkpoint 的 (A_res, A_cond)，否则权重与输入尺度不匹配
+        self.fixed_norm = fixed_norm
         if isinstance(cond_path, (str, os.PathLike)):
             cond_path = [cond_path]
         if isinstance(target_path, (str, os.PathLike)):
@@ -270,6 +283,10 @@ class ModelBPairDataModule(pl.LightningDataModule):
             raise ValueError(
                 f"invalid normalization A_res={A_res}, A_cond={A_cond}"
             )
+        if self.fixed_norm is not None:
+            print(f"Data max: A_res={A_res:.6g}, A_cond={A_cond:.6g}; "
+                  f"using fixed A_res={self.fixed_norm[0]:.6g}, A_cond={self.fixed_norm[1]:.6g}")
+            A_res, A_cond = self.fixed_norm
 
         self.data_by_L = {}
         self.num_pairs_by_L = {}

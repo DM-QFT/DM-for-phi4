@@ -1,0 +1,43 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=24:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_hmc1m_10
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_multiL_hmc_1m_b256_t10.pbs.log
+
+# 同 Fig. 2。生成本核的训练对，再从 Fig. 3 旧检查点续训。
+# L=8,16,32 共 1024000 对，网络不变，batch 256，2000 epoch。
+set -euo pipefail
+cd /work/gw97/w97000/project/DM/ModelB
+export PATH=/work/gw97/w97000/envs/nenv2/bin:$PATH
+export PYTHONUNBUFFERED=1
+
+module list
+hostname
+date
+nvidia-smi -L
+
+/work/gw97/w97000/.local/bin/julia --threads=1 \
+    data_generation/run_multiL_hmc_1m_pairs.jl 10
+
+python -u train/train_modelB_cond.py \
+    --L_list 8,16,32 \
+    --kappa 0.34034 --lam 1.0 --horizon 10 \
+    --sigma 250 --lr 0.001 --batch_size 256 \
+    --epochs 2000 --ema_start 0 --num_ckpts 100 \
+    --ema_decay 0.9999 --channels 16,32,64,128 \
+    --device cuda:0 --compile_mode reduce-overhead \
+    --init_ckpt runs/modelBcond_Lmulti8-16-32_k0.34034_l1.0_t10_ncsnpp_hmc_noskip/models/epoch=10000.ckpt \
+    --output_suffix _hmc_1m_b256_noskip \
+    --cond_paths \
+        trainingdata/modelB_L8_Ne341248_hmc_l1_kappa_0.340340_t0_seed2026092408.jld2 \
+        trainingdata/modelB_L16_Ne341248_hmc_l1_kappa_0.340340_t0_seed2026092416.jld2 \
+        trainingdata/modelB_L32_Ne341504_hmc_l1_kappa_0.340340_t0_seed2026092432.jld2 \
+    --target_paths \
+        trainingdata/modelB_L8_Ne341248_hmc_l1_kappa_0.340340_t10_dt0.002_seed2026092508.jld2 \
+        trainingdata/modelB_L16_Ne341248_hmc_l1_kappa_0.340340_t10_dt0.002_seed2026092516.jld2 \
+        trainingdata/modelB_L32_Ne341504_hmc_l1_kappa_0.340340_t10_dt0.002_seed2026092532.jld2
+
+date

@@ -148,6 +148,12 @@ def short_time_slope(stats05, mode, k):
     return coeff[0]
 
 
+def coarse_segment(t):
+    """合并曲线里粗网格点的掩码。"""
+    # 细段止于最后一个保留的 0.5 网格点（可能正好是 10 的倍数，故再放宽 0.5），之后才是粗链
+    return t > np.max(t[np.mod(t, 10) != 0], initial=-1.0) + 0.5
+
+
 def gamma_from_curves(curves, taus):
     """各模 Γ_eff 点（x 归一用全样本 tau），返回拼接的 (u, g, err, mode_id)。"""
     us, gs, es, ids = [], [], [], []
@@ -155,7 +161,7 @@ def gamma_from_curves(curves, taus):
         if mode not in curves or not np.isfinite(taus[mode]):
             continue
         t, r, rb, sem = curves[mode]
-        xm, g, err = core.gamma_points(t / taus[mode], r, sem)
+        xm, g, err = core.gamma_points(t / taus[mode], r, sem, seg=coarse_segment(t))
         us.append(1.0 / xm)
         gs.append(g)
         es.append(err)
@@ -263,15 +269,19 @@ def analyze(L):
               f"chi2/dof={joint_sum['chi2dof']:.2f} (r={r_mean:.3f})")
 
         gamma = gamma_from_curves(curves, taus)
+        gamma_boot = np.array([gamma_from_boot(curves, taus, b)[1]
+                               for b in range(len(boot[ds]))])
+        # 相邻 ρ 的误差强相关，对数差分的误差直接 bootstrap；独立传播在小 x 端高估 2–4 倍
+        gamma[2] = core.boot_sem(gamma_boot)
         lam0_tail, _, ntail = tail_fit(*gamma[:3])
         lam0_windows = {xmin: tail_fit(*gamma[:3], xmin=xmin)[0]
                         for xmin in (1.5, 2.0, 3.0)}
         free_full = tail_fit(*gamma[:3], xmin=BIN_TAIL_XMIN, fixed_slope=None)
         lam0_boot, free_boot = [], []
-        for b in range(len(boot[ds])):
-            gb = gamma_from_boot(curves, taus, b)
-            lam0_boot.append(tail_fit(*gb)[0])
-            free_boot.append(tail_fit(*gb, xmin=BIN_TAIL_XMIN, fixed_slope=None)[:2])
+        for gb in gamma_boot:
+            lam0_boot.append(tail_fit(gamma[0], gb, gamma[2])[0])
+            free_boot.append(tail_fit(gamma[0], gb, gamma[2], xmin=BIN_TAIL_XMIN,
+                                      fixed_slope=None)[:2])
         lam0_tail_err = core.boot_sem(np.array(lam0_boot))
         free_err = core.boot_sem(np.array(free_boot))
         results[ds] = {
@@ -414,7 +424,7 @@ def gamma_from_boot(curves, taus, b):
         if not np.isfinite(taus[mode]):
             continue
         t, r, rb, sem = curves[mode]
-        xm, g, err = core.gamma_points(t / taus[mode], rb[b], sem)
+        xm, g, err = core.gamma_points(t / taus[mode], rb[b], sem, seg=coarse_segment(t))
         us.append(1.0 / xm), gs.append(g), es.append(err)
     return [np.concatenate(v) for v in (us, gs, es)]
 

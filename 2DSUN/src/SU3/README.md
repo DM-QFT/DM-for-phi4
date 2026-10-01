@@ -243,7 +243,7 @@ $L=16$，$\beta=6$，两种模型同为 CH=16、3 层、批 64、学习率 $2\ti
 
 - **一步精确热核采样。** 把任意 $\Delta$ 的热核增量做成一步精确抽样，目标仍是热核 score，反向与 $\sigma$ 不变。做过，与随机游走无差别，脚本已删，见 7.6 节。
 - **Haar 端点路径，回归闭式漂移。** 固定耦合的一步族取 $U_\tau=e^{i\tau\Xi}U_0$，$\Xi=-i\log G$，$G$ 为 Haar，$\tau=s(t)/s(1)$。端点精确 Haar，速度 $\dot\tau\,\Xi$，条件密度 $j(\Xi)/(\tau^8j(\tau\Xi))$ 在 alcove 壁上连续地归零，条件 score $\nabla\log j(\Xi)/\tau-\nabla\log j(\tau\Xi)$ 闭式且方差有限。反向用 7.2 节的 flow 加 Langevin 形式，取 $\tilde g=g$。关键是漂移 $-v+\tfrac12g^2S$ 对 $v$ 和 $S$ 是线性的，而两者都是逐样本闭式量的条件期望，所以**一个头**回归 $(-v+\tfrac12g^2S)/g^2=-Y/2s^2+\tfrac12[(s_1/s)\nabla\log j(\Xi)-\nabla\log j(Y)]$ 即可，`sample_su3_em.py` 一行不改。$\Xi$ 按 Weyl 密度抽本征角再配 Haar 框架，不用 `eigh`。这是 `train_su3_loghaar.py`（$\sigma=2.15$ 使 $s(1)=1.54$，即 $\Xi$ 每生成元的 rms）。代数高斯路径则不可取，它相对 Haar 的密度 $G/j$ 在壁处像 $1/d^2$ 发散，score 头的目标方差无界。
-- **确定性 ODE。** 代数高斯是固定耦合，$v=\dot sE[\Xi|U]$ 精确，一行矩阵指数就是反向。问题是 ODE 对 score 误差没有自我修正，以及 $t=1$ 端点不是 Haar（7.1 节）。
+- **确定性 ODE。** 代数高斯是固定耦合，$v=\dot sE[\Xi|U]$ 精确，一行矩阵指数就是反向。问题是 ODE 对 score 误差没有自我修正，以及 $t=1$ 端点不是 Haar（7.1 节）。已定不走这条路，ODE 稳定性差。
 
 "一步、只回归噪声本身、随机反向"三者不可兼得。把回归目标换成闭式漂移（第二条）就都满足。
 
@@ -339,13 +339,27 @@ $\sigma$ 与先验。$t=1$ 的真实边缘是 $p_0$ 与 $N(0,s^2)$ 的卷积，�
 
 结论。方案里担心的先验、终止和投影都不是问题，失败在网络。闭式项 $(X-V)/s$ 只精确到 $O(s)$，它的 $O(s)$ 误差含切向分量，与力 $-2s\,iSV$ 同量级，网络必须同时学几何修正和力，而 loss 又被 9 维法向修正主导，切向漂移学不准。热核方案的网络输入永远在群上，只学 score，10 个 epoch 就到 0.414。要救平直方案，闭式项得换成精确的单链自由去噪器 $E_{\rm Haar}[U|X]$（SU(3) 单链积分对源的导数，把全部几何修正吸收掉，网络只剩相互作用），或者用大得多的网络和训练量。同样 100 epoch 下差距是 0.26 对 0.42。
 
+### 7.9 Aarts、Wang 等 2026 的一步代数高斯为什么能用
+
+arXiv:2601.19552（`references/2601.19552v1.pdf`）用一步代数高斯 $e^{i\sigma\eta T}U_0$ 加回归 $-\eta/\sigma$，训练就是第 6 节表首行的单步代数高斯，差别全在采样器。他们的反向不是 SDE 的时间反演，而是 MAALA。每个 $t$（800 个对数格点）跑 250 步 Langevin 到定态，最后 2% 的 $t$ 用精确 Wilson 作用量做 Metropolis。最终无偏由 MALA 保证，学到的场只在 $t\to0$ 的极限起作用（趋于精确力，$O(\sigma^2)$ 收敛），中间的 $t$ 只是退火路径。代价是每个构型 $2\times10^5$ 步，一万个构型在 H100 上 20 h。他们 Fig. 2 的 analytic forward 是热核特征标，但前向不是热核。SU(2) 基础特征标是 $(1-\sigma^2/4)e^{-\sigma^2/8}$ 对 $e^{-3\sigma^2/8}$，$\sigma=2$ 时 0 对 0.22，plaquette 取四次方后差 0.005 量级，图上看不出。
+
+他们的前向加目标配普通的 Anderson 反向 SDE 不行。2026-09-30 用 SU(2) 单链的精确条件期望检验过。$p_0\propto e^{\beta\,\mathrm{Tr}\,U/2}$，$\beta=2$，$s=25$，2000 步，$N=2^{17}$，精确值 0.4331。
+
+| 反向 | 终点 | 说明 |
+|---|---|---|
+| SDE，漂移用 $-E[\eta\vert U]/\sigma$ | 0.505 | 高 16%。从 Haar 或从精确 $p_1$ 出发都一样。中间边缘与前向对不上，$t=0.5$ 处 0.21 对 0.019 |
+| SDE，漂移用 $p_t$ 的精确 score | 0.348 | 低 20% |
+| ODE，同一个场，从 $p_1$ 出发 | 0.4323 | 1σ 内，逐 $t$ 复现前向边缘 |
+
+ODE 的结果说明学到的场是输运速度，不是 score。前向边缘本身不单调，$t=0.75$ 处 $\langle\cos\theta\rangle=-0.149$。
+
 ## 8. 使用方法
 
 ```bash
 cd 2DSUN
-python src/train_su3_dm.py                                  # 热核随机游走，常量在文件顶部，无命令行参数
-python src/train_su3_loghaar.py                             # Haar 端点路径单头（7.5 节），σ=2.15
-python src/sample_su3_em.py [results/<run>/ckpt_epochNNNN.pt]   # 两种模型通用，默认取热核版末检查点，样本存到检查点所在目录
+python src/SU3/train_su3_dm.py                                  # 热核随机游走，常量在文件顶部，无命令行参数
+python src/SU3/train_su3_loghaar.py                             # Haar 端点路径单头（7.5 节），σ=2.15
+python src/SU3/sample_su3_em.py [results/<run>/ckpt_epochNNNN.pt]   # 两种模型通用，默认取热核版末检查点，样本存到检查点所在目录
 ```
 
 两个训练脚本共用 `train_su3_dm.py` 的网络、数据读取和训练循环（`main(loss_fn, out, sigma)`），`train_su3_loghaar.py` 只定义前向过程和 loss。
@@ -364,3 +378,12 @@ python src/sample_su3_em.py [results/<run>/ckpt_epochNNNN.pt]   # 两种模型�
 - 新读出层的 einsum 返回非连续张量，模型输出已加 `contiguous()`，否则 `matrix_exp` 报 view 错误。
 - 等变性检验的 float32 读数随层数增加而变大，是舍入放大，怀疑时用 complex128 和严格幺正的输入复验。
 - 反向 EM 的步数在 500 到 2000 之间对 $\langle P\rangle$ 的影响不超过 0.5%，与同一设置不同运行之间的散布同量级。默认 2000 步，1000 个构型约 12 分钟。粗看趋势时可以降到 500。线性与对数网格等价。
+
+## 10. SU(2) 版
+
+`../SU2/train_su2_dm.py` 和 `../SU2/sample_su2_em.py` 是本方案的 SU(2) 版，数据来自 `trainningdata/su2_2d_heatbath.jl`。链存成单位四元数，热核增量和解析 score 都是 $\theta=|\xi|$ 的闭式函数，不需要 `eigh` 和 `matrix_exp`。
+
+GPU 优化版（2026-09-30）逐项核对过。热核拒绝采样写成 Triton 内核，每个格点有独立的 Philox 计数器，块内重试到全部接受，没有 CPU 同步。另有四元数双线性乘积、卷积权重按 batch 展开、静态的 `Kmax`、`compile(reduce-overhead)` 加 fused Adam 加 foreach EMA。同 seed 下编译版的 loss 与 eager 相同，梯度差 $10^{-6}$，cudagraph 重放时每步换 seed，热核矩 $e^{-3\Delta/8}$ 精确复现。
+
+- `reduce-overhead` 在这里有效，不要改回 `default`（$L=16$ 慢 2 倍，$L=64$ 持平）。φ⁴ 采样只用 `default` 是 NCSNpp 上采样的问题，L-CNN 没有上采样。
+- `heat_kernel_step` 要求 `delta` 是每个前导组一个方差的连续布局，训练和 EM 采样器都满足，不再支持任意广播。

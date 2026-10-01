@@ -1,0 +1,40 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=1:mpiprocs=1
+#PBS -l walltime=18:00:00
+#PBS -W group_list=gw97
+#PBS -N modelb_zlog_t0p5
+#PBS -j oe
+#PBS -o /work/gw97/w97000/project/DM/ModelB/runs/modelB_L32_zlog_t0p5.pbs.log
+
+# zlog Δt=0.5 版：与 t10 版同一组 t=0 zlog 初态，target 全程 dt=1e-4 演化到
+# t=0.5（缺则补），训练超参与 train_modelB_L32_zlog.pbs 完全一致。
+set -euo pipefail
+
+cd /work/gw97/w97000/project/DM/ModelB
+export PATH=/work/gw97/w97000/envs/nenv2/bin:$PATH
+
+echo "Job ID: ${PBS_JOBID}"
+echo "Node: $(hostname)"
+echo "Start: $(date '+%F %T')"
+nvidia-smi -L
+
+COND=trainingdata/modelB_L32_Ne51200_corrgausszlog_l1_kappa_0.340340_t0_seed2026081001.jld2
+TARGET=trainingdata/modelB_L32_Ne51200_corrgausszlog_l1_kappa_0.340340_t0p5_dt0.0001_seed2026081002.jld2
+
+if [[ ! -f ${TARGET} ]]; then
+    /work/gw97/w97000/.local/bin/julia \
+        data_generation/run_l32_l1_k0p340340_corrgauss_zlog_t0p5.jl
+fi
+
+PYTHONUNBUFFERED=1 python -u train/train_modelB_cond.py \
+    --L 32 \
+    --kappa 0.34034 --lam 1.0 --horizon 0.5 \
+    --sigma 250 --lr 0.001 --batch_size 64 \
+    --epochs 10000 --ema_start 0 --num_ckpts 100 \
+    --device cuda:0 --compile_mode reduce-overhead \
+    --output_suffix _corrgauss_zlog_noskip \
+    --cond_path "${COND}" \
+    --target_path "${TARGET}"
+
+echo "Finish: $(date '+%F %T')"

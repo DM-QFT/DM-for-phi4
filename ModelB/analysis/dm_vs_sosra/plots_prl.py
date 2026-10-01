@@ -1,4 +1,4 @@
-"""L32 图的 PRL 出版版：复用 run_all.analyze(32)，输出到 dm_vs_sosra/prl/。"""
+"""Model-B 论文图的 PRL 出版版，复用既有轨迹和 run_all 的分析结果。"""
 
 import sys
 from pathlib import Path
@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import h5py
 import numpy as np
 import scipy.fft
+from scipy.ndimage import gaussian_filter
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -23,7 +24,6 @@ from run_all import collapse_points, fmt
 PLOTS = core.ROOT.parent / "plots"
 sys.path.insert(0, str(PLOTS))
 from modelb_palette import (  # noqa: E402
-    ALT,
     DM,
     GUIDE,
     MODE_COLORS,
@@ -43,18 +43,18 @@ DS_C = {"dm": DM, "sosra": REFERENCE}
 DS_M = {"dm": "s", "sosra": "o"}
 
 
-def tag(ax, ds, L, loc, params=False, z=None, fontsize=8):
+def tag(ax, ds, L, loc, params=False, z=None, fontsize=None):
     x, ha = (0.96, "right") if loc == "right" else (0.04, "left")
     text = fr"{DS_LABEL[ds]}, $L={L}$" if ds else fr"$L={L}$"
     if params:
-        text += "\n" + r"$\kappa=0.34034$, $\lambda=1$"
+        text += "\n" + r"$\kappa=0.34034$" + "\n" + r"$\lambda=1$"
     if z is not None:
         text += "\n" + fr"$\tau_n\propto\hat k^{{-{fmt(*z)}}}$"
     ax.text(x, 0.95, text, transform=ax.transAxes, ha=ha, va="top",
             fontsize=fontsize)
 
 
-def mode_legend(axis, fontsize=6.5, **kw):
+def mode_legend(axis, fontsize=None, **kw):
     """表头作为无记号的首条目，使 n、k̂ 与下方数字列精确对齐；模条目排最前。"""
     from matplotlib.container import ErrorbarContainer
     handles, labels = axis.get_legend_handles_labels()
@@ -63,7 +63,7 @@ def mode_legend(axis, fontsize=6.5, **kw):
     header = plt.Line2D([], [], ls="none", marker="")
     axis.legend([header] + [p[0] for p in pairs],
                 [r"$n$  ($\hat k$)"] + [p[1] for p in pairs], fontsize=fontsize,
-                labelspacing=0.2, borderaxespad=0.4, **kw)
+                **kw)
 
 
 def inset_tau_z(axis, res, show_errorbars=True):
@@ -73,48 +73,38 @@ def inset_tau_z(axis, res, show_errorbars=True):
     # width 0.37 keeps the inset right edge at 0.50, short of the legend.
     ins = axis.inset_axes([0.13, 0.16, 0.37, 0.44])
     khat = res["khat"]
-    inset_markers = {"dm": "o", "sosra": "s"}
     for ds in ("sosra", "dm"):
         r = res[ds]
         good = np.isfinite(r["taus"])
         ins.errorbar(khat[good], r["taus"][good],
                      yerr=r["tau_err"][good] if show_errorbars else None,
-                     color=DS_C[ds], ls="none", marker=inset_markers[ds], ms=2.4,
-                     mfc="none",
-                     mec=DS_C[ds], mew=0.7, elinewidth=0.6,
-                     capsize=1.2, capthick=0.5, zorder=3,
+                     color=DS_C[ds], ls="none", marker=DS_M[ds], zorder=3,
                      label=DS_LABEL[ds])
         z, _ = r["z"]
         first = int(np.flatnonzero(good)[0])
         grid = np.geomspace(khat[good][0] * 0.9, khat[good][-1] * 1.1, 50)
+        # DM 虚线位于标记和 SOSRA 点线之上，保持重合区的线型可辨。
         ins.plot(grid, r["taus"][first] * (grid / khat[first]) ** (-z),
-                 color=DS_C[ds],
-                 ls="-" if ds == "sosra" else (0, (3, 2)),
-                 lw=0.75, marker="", alpha=0.85,
-                 dash_capstyle="butt")
+                 color=DS_C[ds], zorder=2 if ds == "sosra" else 4,
+                 ls=":" if ds == "sosra" else "--", marker="")
     method_handles = [
-        plt.Line2D([], [], ls="-", lw=0.75, marker="",
+        plt.Line2D([], [], ls=":", marker="",
                    color=REFERENCE, label="SOSRA"),
-        plt.Line2D([], [], ls=(0, (3, 2)), lw=0.75, marker="",
-                   color=DM, dash_capstyle="butt", label="DM"),
+        plt.Line2D([], [], ls="--", marker="", color=DM, label="DM"),
     ]
-    # handlelength*fontsize = 13 pt ends the (3 pt, 2 pt) dash pattern on a
-    # full dash, so the DM handle is not cut mid-dash (butt caps).
-    ins.legend(handles=method_handles, loc="upper right", fontsize=5.9,
-               frameon=False, handlelength=2.2, handletextpad=0.35,
-               labelspacing=0.15, borderaxespad=0.45)
+    # Smaller text keeps labels readable within the single-column inset.
+    ins.legend(handles=method_handles, loc="upper right", fontsize=7)
     ins.set(xscale="log", yscale="log", ylim=(0.6, 450))
     ins.set_xticks([0.3, 0.5, 1.0], ["0.3", "0.5", "1"])
     ins.xaxis.set_minor_formatter(plt.NullFormatter())
-    ins.tick_params(labelsize=6.4, length=2.5)
-    ins.tick_params(which="minor", length=1.5)
-    ins.set_xlabel(r"$\hat k$", fontsize=7.5, labelpad=1)
-    ins.set_ylabel(r"$\tau_n$", fontsize=7.5, labelpad=1)
+    ins.tick_params(labelsize=7)
+    ins.set_xlabel(r"$\hat k$", fontsize=8)
+    ins.set_ylabel(r"$\tau_n$", fontsize=8)
     ins.text(0.05, 0.16, fr"$z_{{\rm DM}}={fmt(*res['dm']['z'])}$",
-             transform=ins.transAxes, ha="left", va="bottom", fontsize=6.2,
+             transform=ins.transAxes, ha="left", va="bottom", fontsize=7,
              color=DM)
     ins.text(0.05, 0.04, fr"$z_{{\rm SOSRA}}={fmt(*res['sosra']['z'])}$",
-             transform=ins.transAxes, ha="left", va="bottom", fontsize=6.2,
+             transform=ins.transAxes, ha="left", va="bottom", fontsize=7,
              color=REFERENCE)
 
 
@@ -123,17 +113,17 @@ def plot_collapse(L, ds, res, output_dir=PRL, show_errorbars=True,
     """Critical collapse with optional error bars and SOSRA mean curves."""
     r = res[ds]
     curves, taus, khat = r["curves"], r["taus"], res["khat"]
-    legacy_markers = ("o", "^", "D", "s")
-    figure, axis = plt.subplots(figsize=(3.375, 2.55), layout="constrained")
+    mode_styles = list(plt.rcParams["axes.prop_cycle"])
+    figure, axis = plt.subplots()
     for mode in sorted(curves):
         if not np.isfinite(taus[mode]):
             continue
-        color = MC[mode]
-        marker = legacy_markers[mode] if ds == "dm" else MM[mode]
+        color = mode_styles[mode]["color"]
+        marker = mode_styles[mode]["marker"]
 
         if show_modelb_mean:
-            # Direct SOSRA integration is a same-mode solid curve with capped error
-            # bars; the DM is shown as open points with capped error bars.
+            # SOSRA uses same-mode dotted curves with capped error bars.
+            # DM uses open points with capped error bars.
             modelb = res["sosra"]
             x_modelb, rho_modelb, _, sem_modelb = collapse_points(
                 modelb["curves"], modelb["taus"], mode
@@ -143,7 +133,7 @@ def plot_collapse(L, ds, res, output_dir=PRL, show_errorbars=True,
             xb = x_modelb[valid_modelb][order]
             yb = rho_modelb[valid_modelb][order]
             eb = sem_modelb[valid_modelb][order]
-            axis.plot(xb, yb, color=color, linestyle="-", marker="", zorder=2)
+            axis.plot(xb, yb, color=color, linestyle=":", marker="", zorder=2)
             if show_errorbars:
                 axis.errorbar(
                     xb,
@@ -152,10 +142,6 @@ def plot_collapse(L, ds, res, output_dir=PRL, show_errorbars=True,
                     linestyle="none",
                     marker="",
                     color=color,
-                    elinewidth=0.45,
-                    capsize=1.5,
-                    capthick=0.45,
-                    alpha=0.70,
                     zorder=2.2,
                 )
 
@@ -168,31 +154,21 @@ def plot_collapse(L, ds, res, output_dir=PRL, show_errorbars=True,
             linestyle="none",
             marker=marker,
             color=color,
-            markerfacecolor="none",
-            markeredgecolor=color,
-            markersize=2.6 if ds == "dm" else 3.4,
-            markeredgewidth=0.7 if ds == "dm" else 0.9,
-            elinewidth=0.45,
-            capsize=1.5,
-            capthick=0.45,
             zorder=3,
             label=fr"${res['mode_n'][mode]}$  ({khat[mode]:.2f})",
         )
     if ds == "dm":
         fit_grid = np.geomspace(2e-3, 20, 400)
-        for fit_ds, linestyle in (("sosra", "-"),
-                                  ("dm", (0, (4, 2)))):
+        # 两条拟合在 x<3 几乎重合，DM fit 用 DM 蓝色并压在最上，否则同色虚线看不出来
+        for fit_ds, linestyle in (("sosra", ":"), ("dm", "--")):
             params = res[fit_ds]["fits"]["joint"]["bsum"]["params"]
             axis.plot(
                 fit_grid,
                 core.f_bfree(fit_grid, *params),
-                color=REFERENCE,
+                color=DS_C[fit_ds],
                 linestyle=linestyle,
-                linewidth=0.85,
-                alpha=0.72,
                 marker="",
-                dash_capstyle="butt",
-                zorder=4,
+                zorder=4 if fit_ds == "sosra" else 5,
                 label=f"{DS_LABEL[fit_ds]} fit",
             )
     grid = np.geomspace(2e-3, 20, 200)
@@ -200,27 +176,21 @@ def plot_collapse(L, ds, res, output_dir=PRL, show_errorbars=True,
         grid,
         np.exp(-grid),
         color=GUIDE,
-        linestyle=(0, (1, 1.6)) if ds == "dm" else "--",
-        linewidth=0.9,
+        linestyle="-." if ds == "dm" else "--",
         marker="",
-        dash_capstyle="round" if ds == "dm" else "butt",
-        zorder=1,
+        zorder=6,
         label=r"$e^{-x}$" if ds == "dm" else "_nolegend_",
     )
     if ds != "dm":
-        axis.text(1.8, 0.10, r"$e^{-x}$", color=GUIDE, fontsize=7)
+        axis.text(1.8, 0.10, r"$e^{-x}$", color=GUIDE)
     axis.set(xscale="log", yscale="log", xlim=(2e-3, 20), ylim=(1e-2, 1.6),
              xlabel=r"$x=\Delta t/\tau_n$", ylabel=r"$\rho_n(x)$")
     if ds == "dm":
-        axis.xaxis.label.set_size(10)
-        axis.yaxis.label.set_size(10)
-        # handlelength*fontsize = 16.1 pt ends the (4 pt, 2 pt) dash pattern
-        # of the DM fit handle on a full dash (butt caps).
-        mode_legend(axis, fontsize=7.0, loc="lower left",
-                     bbox_to_anchor=(0.515, 0.02), handlelength=2.3,
-                     handletextpad=0.45)
+        # Eight legend entries must fit beside the inset without covering data.
+        mode_legend(axis, fontsize=8, loc="lower left",
+                    bbox_to_anchor=(0.49, 0.01))
         inset_tau_z(axis, res, show_errorbars=show_errorbars)
-        tag(axis, None, L, "right", params=True, fontsize=8.5)
+        tag(axis, None, L, "right", params=True)
     else:
         mode_legend(axis, loc="lower left", handlelength=1.2)
         tag(axis, ds, L, "right", params=True, z=r["z"])
@@ -229,43 +199,55 @@ def plot_collapse(L, ds, res, output_dir=PRL, show_errorbars=True,
     suffix = "_with_modelb_mean" if show_modelb_mean else ""
     if not show_errorbars:
         suffix += "_no_errorbars"
-    figure.savefig(output_dir / f"collapse_{ds}_L{L}{suffix}.pdf",
-                   transparent=True)
+    figure.savefig(output_dir / f"collapse_{ds}_L{L}{suffix}.pdf")
     plt.close(figure)
 
 
 def plot_gamma_invx(L, ds, res, output_dir=PRL):
-    """单面板：ds="dm" 为正文 Fig.3，"sosra" 进附录。"""
-    figure, axis = plt.subplots(figsize=(3.375, 2.55), layout="constrained")
-    grid = np.geomspace(0.06, 5.0, 200)
+    """Effective decay rate against inverse rescaled lag."""
+    figure, axis = plt.subplots()
+    mode_styles = list(plt.rcParams["axes.prop_cycle"])
+    grid = np.geomspace(0.06, 50.0, 300)
     r = res[ds]
     u, g, err, ids = r["gamma"]
     for mode in np.unique(ids).astype(int):
         m = ids == mode
-        axis.errorbar(u[m], g[m], err[m], color=MC[mode], ls="none",
-                      marker=MM[mode], ms=2.4, mew=0.6, elinewidth=0.5,
-                      capsize=0, zorder=3,
+        axis.errorbar(u[m], g[m], err[m], **mode_styles[mode], ls="none",
+                      zorder=3,
                       label=fr"${res['mode_n'][mode]}$  ({res['khat'][mode]:.2f})")
+    # Separate legends keep the style's font size without covering the data.
+    mode_legend(axis, loc="upper left", bbox_to_anchor=(0, 1.04))
+    axis.add_artist(axis.get_legend())
     lam0_tail = r["lam0_tail"][0]
-    axis.plot(grid, lam0_tail + 0.5 * grid, color=GUIDE, ls="--", lw=0.9,
-              marker="", label=r"$1/(2x)+\lambda_0$")
+    # Neutral reference curves remain distinct from the colored mode data.
+    tail_line, = axis.plot(grid, lam0_tail + 0.5 * grid, color=GUIDE, ls="--",
+                           marker="", label=r"$1/(2x)+\lambda_0$")
     # bsum 拟合的 Γ_eff(u) = λ0 + a·b·u/(u+a)，λ0+a·b=r（和值规则）
     lam0, a, b = r["fits"]["joint"]["bsum"]["params"]
-    axis.plot(grid, lam0 + a * b * grid / (grid + a), color=REFERENCE, ls="-.",
-              lw=1.0, marker="", label="sum-rule fit")
-    axis.axhline(1.0, color=ZERO, ls=":", lw=0.8, marker="")
-    axis.set(xscale="log", xlim=(0.06, 5.0), ylim=(0, 1.8),
-             yticks=[0.0, 0.5, 1.0, 1.5],
+    fit_line, = axis.plot(grid, lam0 + a * b * grid / (grid + a),
+                          color=REFERENCE, ls="-.", marker="",
+                          label="sum-rule fit")
+    axis.axhline(1.0, color=ZERO, ls=":", marker="")
+    # 短时极限 r=τ_n q_n²/G_n 由静态量定，标成水平参考线
+    r_mean = r["r_mean"][0]
+    axis.plot([0.45, 50.0], [r_mean, r_mean], color=ZERO, ls=":", marker="")
+    axis.text(45.0, r_mean + 0.03, r"$r$", ha="right", va="bottom")
+    # 长时极限 λ0（尾部拟合值，与文字框和虚线一致）标在左半段
+    axis.plot([0.06, 1.0], [lam0_tail, lam0_tail], color=ZERO, ls=":", marker="")
+    axis.text(0.95, lam0_tail + 0.03, r"$\lambda_0$", ha="right", va="bottom")
+    axis.set(xscale="log", xlim=(0.06, 50.0), ylim=(0, 2.0),
+             yticks=[0.0, 0.5, 1.0, 1.5, 2.0],
              xlabel=r"$1/x=\tau_n/\Delta t$",
              ylabel=r"$\Gamma_{\mathrm{eff}}=-\mathrm{d}\ln\rho_n/\mathrm{d}x$")
-    tag(axis, ds, L, "left")
-    axis.text(0.04, 0.85,
-              fr"$\lambda_0={lam0_tail:.2f}$, $r={r['r_mean'][0]:.2f}$",
-              transform=axis.transAxes, ha="left", va="top", fontsize=7)
-    mode_legend(axis, fontsize=6, loc="lower right", handlelength=1.4)
+    axis.text(0.97, 0.25,
+              fr"{DS_LABEL[ds]}, $L={L}$" + "\n"
+              + fr"$\lambda_0={lam0_tail:.2f}$" + "\n"
+              + fr"$r={r['r_mean'][0]:.2f}$",
+              transform=axis.transAxes, ha="right", va="bottom")
+    axis.legend(handles=[tail_line, fit_line], loc="lower right")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output_dir / f"gamma_invx_{ds}_L{L}.pdf", transparent=True)
+    figure.savefig(output_dir / f"gamma_invx_{ds}_L{L}.pdf")
     plt.close(figure)
 
 
@@ -332,10 +314,7 @@ def plot_reverse_nfe_tau_archived(output_dir=PRL):
                 0.05744915, 0.02425856, 0.01263263,
             ]),
             "z": (3.867, 0.023),
-            "color": REFERENCE,
-            "marker": "o",
             "label": "Model B",
-            "filled": True,
         },
         "ncsnpp": {
             "tau": np.array([
@@ -347,10 +326,7 @@ def plot_reverse_nfe_tau_archived(output_dir=PRL):
                 0.06170943, 0.02390052, 0.01312677,
             ]),
             "z": (3.855, 0.021),
-            "color": DM,
-            "marker": "s",
-            "label": "NCSN++",
-            "filled": False,
+            "label": "EM (2000 steps)",
         },
         "dpmv3": {
             "tau": np.array([
@@ -362,31 +338,23 @@ def plot_reverse_nfe_tau_archived(output_dir=PRL):
                 0.05759810, 0.02128833, 0.01505658,
             ]),
             "z": (3.866, 0.020),
-            "color": ALT,
-            "marker": "^",
-            "label": "DPM-v3",
-            "filled": False,
+            "label": "DPM-v3 (32 NFE)",
         },
     }
 
-    figure, axis = plt.subplots(figsize=(3.375, 2.55), layout="constrained")
+    figure, axis = plt.subplots()
     for key in ("modelb", "ncsnpp", "dpmv3"):
         values = archived[key]
-        axis.errorbar(
+        points = axis.errorbar(
             khat,
             values["tau"],
             yerr=values["error"],
-            color=values["color"],
             linestyle="none",
-            marker=values["marker"],
-            markerfacecolor=(values["color"] if values["filled"] else "none"),
-            markeredgecolor=values["color"],
-            markersize=4.0,
-            markeredgewidth=1.0,
-            elinewidth=0.7,
             zorder=3,
-            label=fr"{values['label']}, $z={fmt(*values['z'])}$",
+            label=values["label"] + "\n" + fr"$z={fmt(*values['z'])}$",
         )
+        if key == "modelb":
+            guide_color = points.lines[0].get_color()
 
     guide_z = archived["modelb"]["z"][0]
     guide_amplitude = np.exp(
@@ -399,9 +367,8 @@ def plot_reverse_nfe_tau_archived(output_dir=PRL):
     axis.plot(
         guide_grid,
         guide_amplitude * guide_grid ** (-guide_z),
-        color=GUIDE,
+        color=guide_color,
         linestyle="--",
-        linewidth=0.9,
         marker="",
         zorder=1,
     )
@@ -413,7 +380,7 @@ def plot_reverse_nfe_tau_archived(output_dir=PRL):
         xlabel=r"$\hat k$",
         ylabel=r"$\tau_n$",
     )
-    axis.legend(loc="upper right", fontsize=6.4)
+    axis.legend(loc="upper right")
     axis.text(
         0.04,
         0.05,
@@ -424,7 +391,7 @@ def plot_reverse_nfe_tau_archived(output_dir=PRL):
     )
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output_dir / "reverse_nfe_tau_L64.pdf", transparent=True)
+    figure.savefig(output_dir / "reverse_nfe_tau_L64.pdf")
     plt.close(figure)
 
 
@@ -534,40 +501,41 @@ def plot_reverse_nfe_tau(output_dir=PRL):
     else:
         mode_text = "$n=" + ",".join(map(str, common_n)) + "$"
 
-    colors = {"modelb": "#D55E00", "ncsnpp": "#0072B2", "dpmv3": "#009E73"}
-    markers = {"modelb": "s", "ncsnpp": "o", "dpmv3": "D"}
     labels = {
         "modelb": "SOSRA",
-        "ncsnpp": "NCSN++ (2000 steps)",
-        "dpmv3": "DPM-Solver-v3 (32 NFE)",
+        "ncsnpp": "EM (2000 steps)",
+        "dpmv3": "DPM-v3 (32 NFE)",
     }
-    figure, axis = plt.subplots(figsize=(3.375, 2.55))
+    figure, axis = plt.subplots()
     grid = np.geomspace(khat[common][0] * 0.96, khat[common][-1] * 1.04, 50)
+    handles = []
     for name in ("modelb", "ncsnpp", "dpmv3"):
         tau = results[name]["tau"][common]
         error = results[name]["error"][common]
         zfit = results[name]["z"]
         z, _ = zfit
         amplitude = np.exp(np.mean(np.log(tau) + z * np.log(khat[common])))
+        points = axis.errorbar(
+            khat[common], tau, error, ls="none",
+            zorder=3, label=labels[name] + "\n" + fr"$z={fmt(*zfit)}$",
+        )
         axis.plot(
-            grid, amplitude * grid ** (-z), color=colors[name],
-            ls="--", lw=0.7, marker="", alpha=0.8,
+            grid, amplitude * grid ** (-z),
+            color=points.lines[0].get_color(),
+            ls=":" if name == "modelb" else "--", marker="",
+            zorder=2.5 if name == "modelb" else 2,
         )
-        axis.errorbar(
-            khat[common], tau, error, color=colors[name], ls="none",
-            marker=markers[name], ms=3.0, mew=0.8, elinewidth=0.7,
-            zorder=3, label=fr"{labels[name]}, $z={fmt(*zfit)}$",
-        )
+        handles.append(points)
     axis.set(xscale="log", yscale="log", xlabel=r"$\hat k$", ylabel=r"$\tau_n$")
-    axis.legend(loc="upper right", fontsize=7.0)
+    axis.legend(handles, [points.get_label() for points in handles], loc="upper right")
     axis.text(
         0.04, 0.05,
         r"$L=64$" + "\n" + r"$\kappa=0.34034$, $\lambda=1$" + "\n" + mode_text,
-        transform=axis.transAxes, ha="left", va="bottom", fontsize=8,
+        transform=axis.transAxes, ha="left", va="bottom",
     )
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output_dir / "reverse_nfe_tau_L64.pdf", transparent=True)
+    figure.savefig(output_dir / "reverse_nfe_tau_L64.pdf")
     plt.close(figure)
     for name in ("modelb", "ncsnpp", "dpmv3"):
         result = results[name]
@@ -627,6 +595,90 @@ def plot_health(L, caches, hmc_m, health):
 
     figure.savefig(PRL / f"health_L{L}.pdf")
     plt.close(figure)
+
+
+def plot_conserved_transport_preview(sigma=2):
+    """Zoomed fields and the recorded total integrated SOSRA current."""
+    from matplotlib.patches import Rectangle
+
+    output_dir = core.ROOT / "results/coarsening"
+    with np.load(output_dir / "conserved_transport.npz") as data:
+        phi = data["phi"][:, :, [0, -1]].astype(np.float64)
+        jx, jy = (data[key][:, :, -1] for key in ("jx", "jy"))
+        t0, t1 = data["times"][[0, -1]]
+
+    # Apply the same periodic filter to fields and link currents. It commutes
+    # with the discrete divergence and preserves the continuity equation.
+    if sigma:
+        phi = gaussian_filter(phi, (sigma, sigma, 0), mode="wrap")
+        jx, jy = (gaussian_filter(j, sigma, mode="wrap") for j in (jx, jy))
+    delta = phi[:, :, 1] - phi[:, :, 0]
+
+    # The box encloses the small domain. Interpolate link components to sites
+    # for the displayed streamlines of the integrated current.
+    x0, x1, y0, y1 = 30, 48, 16, 36
+    jx_sites = (jx + np.roll(jx, 1, axis=0)) / 2
+    jy_sites = (jy + np.roll(jy, 1, axis=1)) / 2
+    sites_x, sites_y = np.arange(16, 80), np.arange(64)
+    u = jx_sites[np.ix_(sites_x, sites_y)].T
+    v = jy_sites[np.ix_(sites_x, sites_y)].T
+    speed = np.hypot(u, v)
+    # Stop curves in weak-current regions before they form small loops.
+    weak = speed < 1.5
+    grid = np.arange(phi.shape[0]) + 0.5
+    text_box = {"facecolor": "white", "edgecolor": "none", "alpha": 0.78, "pad": 0.5}
+
+    with plt.style.context(PLOTS / "cjp_prl_nature.mplstyle"):
+        # Match the draft's 510 pt text width to retain the style's font sizes.
+        figure = plt.figure(figsize=(510 / 72.27, 2.3))
+        # Keep PDF glyphs clear of the canvas edge without cropping the output.
+        figure.get_layout_engine().set(rect=(0.01, 0.02, 0.98, 0.96))
+        layout = figure.add_gridspec(1, 6, width_ratios=(1, 1, 0.045, 0.15, 1, 0.045))
+        axes = [figure.add_subplot(layout[0, index]) for index in (0, 1, 4)]
+        color_axes = [figure.add_subplot(layout[0, index]) for index in (2, 5)]
+        for axis in color_axes:
+            axis.set_box_aspect(1 / 0.045)
+        for index, axis in enumerate(axes):
+            field = phi[:, :, index] if index < 2 else delta
+            im = axis.imshow(
+                field.T, origin="lower", extent=(0, 128, 0, 128),
+                vmin=-2.2, vmax=2.2,
+                interpolation="nearest", rasterized=True,
+            )
+            if index == 0:
+                field_image = im
+            axis.add_patch(Rectangle(
+                (x0, y0), x1 - x0, y1 - y0, fill=False,
+                edgecolor=REFERENCE, linewidth=plt.rcParams["lines.linewidth"],
+            ))
+            axis.text(x0 + 1, y1 - 1, r"$\Omega$", ha="left", va="top", bbox=text_box)
+            axis.text(0.02, 0.98, f"({chr(97 + index)})", transform=axis.transAxes,
+                      ha="left", va="top", bbox=text_box)
+            label = fr"$t={int((t0, t1)[index])}$" if index < 2 else r"$\Delta\phi,\ \mathbf{J}$"
+            axis.text(0.97, 0.98, label, transform=axis.transAxes,
+                      ha="right", va="top", bbox=text_box)
+            axis.set(xlim=(16, 80), ylim=(0, 64), xticks=(16, 48, 80),
+                     yticks=(0, 32, 64), xlabel=r"$x$")
+            if index:
+                axis.tick_params(labelleft=False)
+        axes[0].set_ylabel(r"$y$")
+        axes[1].contour(grid, grid, phi[:, :, 0].T, levels=[0],
+                        colors=[REFERENCE], linestyles="dotted")
+        axes[2].streamplot(
+            sites_x + 0.5, sites_y + 0.5,
+            np.ma.masked_where(weak, u), np.ma.masked_where(weak, v),
+            color=REFERENCE, density=1.6, linewidth=0.6, arrowsize=0.55,
+            minlength=0.18, maxlength=2.5,
+        )
+        figure.colorbar(field_image, cax=color_axes[0], ticks=(-2, 0, 2))
+        figure.colorbar(im, cax=color_axes[1], ticks=(-2, 0, 2))
+        for axis, label in zip(color_axes, (r"$\phi$", r"$\Delta\phi$")):
+            axis.set_xlabel(label)
+            axis.xaxis.set_label_position("top")
+        name = "conserved_transport_smoothed" if sigma else "conserved_transport_preview"
+        for suffix in ("pdf", "png"):
+            figure.savefig(output_dir / f"{name}.{suffix}")
+        plt.close(figure)
 
 
 def main():
