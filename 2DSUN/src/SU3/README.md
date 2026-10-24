@@ -24,11 +24,11 @@ torch 里链存成形状 `(B, 2, L, L, 3, 3)` 的 complex64 张量，`U[:, mu, x
 $$\mathrm dU_\mu(x)=i\,T^a\,\mathrm dB^a_\mu(x)\,U_\mu(x),\qquad
 \langle\mathrm dB^a\mathrm dB^b\rangle=g(t)^2\delta^{ab}\mathrm dt,\qquad g(t)=\sigma^t .$$
 
-到时刻 $t$ 累计的方差是
+用 $\Sigma(t)$ 表示噪声尺度。到时刻 $t$ 累计的方差是
 
-$$\Sigma(t)=\int_0^tg^2=\frac{\sigma^{2t}-1}{2\ln\sigma}\equiv s(t)^2 ,$$
+$$\Sigma(t)^2=\int_0^t g(u)^2\,\mathrm du=\frac{\sigma^{2t}-1}{2\ln\sigma}.$$
 
-$s(t)$ 就是仓库里的 `marginal_prob_std`，$g(t)$ 是 `diffusion_coeff`，与标量场代码完全同一套约定。
+`marginal_prob_std` 返回 $\Sigma(t)$，`diffusion_coeff` 返回 $g(t)$。下文推导中的 $s(t)\equiv\Sigma(t)$ 也表示噪声尺度，方差始终为 $s(t)^2=\Sigma(t)^2$。这里的 $\Sigma(t)$ 不是矩阵分量或总旋转角的标准差。
 
 为什么是左乘。噪声 $e^{iY}$ 乘在 $U_\mu(x)$ 左边，规范变换后 $\Omega(x)U_\mu(x)\Omega(x+\hat\mu)^\dagger$ 的左乘噪声变成 $\Omega(x)e^{iY}\Omega(x)^\dagger$，即 $Y\to\Omega(x)Y\Omega(x)^\dagger$。噪声在链的起点 $x$ 处协变，score 也在 $x$ 处协变，网络只需在每个站点输出一个按 $\Omega(x)F\Omega(x)^\dagger$ 变换的矩阵。
 
@@ -36,14 +36,14 @@ $s(t)$ 就是仓库里的 `marginal_prob_std`，$g(t)$ 是 `diffusion_coeff`，�
 
 去噪 score 匹配从头到尾不需要写出边缘分布 $p_t$。训练只用两样东西，前向过程的样本 $U_t$ 和一步过渡核 $q(U_t|U_{t'})$ 的 score，$p_t$ 是网络隐式学到的。但反向 SDE 的形式由前向 SDE 决定。第 5 节的采样器 $U\leftarrow e^{i[g^2S\,\Delta t+g\sqrt{\Delta t}\,Z]}U$ 反演的是群上的布朗运动，所以训练样本必须来自布朗运动，目标必须是布朗运动过渡核的条件 score，否则学到的 score 属于另一个过程，反向积分就不自洽。
 
-平直空间里这个要求是自动满足的。"加一个方差 $\Sigma$ 的高斯噪声"恰好就是 $\mathbb R^n$ 上布朗运动走过 $\Sigma$ 的过渡核，$\mathbb R^n$ 的热核本来就是高斯，所以标量场代码里 $x_t=x_0+s\,z$ 与 SDE 描述完全等价，从来不需要多想。SU(3) 上两者分开了。布朗运动的过渡核是群上的热核 $K_\Sigma$，在指数坐标 $g=e^{iY}$ 下有精确表达式（Eskin，Fegan）
+平直空间里这个要求是自动满足的。加方差为 $\Sigma^2$ 的高斯噪声给出 $\mathbb R^n$ 上布朗运动累计方差为 $\Sigma^2$ 的过渡核。标量场代码里的 $x_t=x_0+\Sigma z$ 与 SDE 描述一致。SU(3) 上布朗运动的过渡核是群上的热核 $K_{\Sigma^2}$，在指数坐标 $g=e^{iY}$ 下有精确表达式（Eskin，Fegan）
 
-$$K_\Sigma(e^{iY})\propto\sum_{\gamma}\;j(Y+\gamma)^{-1/2}\,e^{-|Y+\gamma|^2/2\Sigma},\qquad
+$$K_{\Sigma^2}(e^{iY})\propto\sum_{\gamma}\;j(Y+\gamma)^{-1/2}\,e^{-|Y+\gamma|^2/(2\Sigma^2)},\qquad
 j(Y)=\prod_{i<j}\Big[\frac{\sin(d_{ij}/2)}{d_{ij}/2}\Big]^2,\quad d_{ij}=\theta_i-\theta_j ,$$
 
 $\theta_i$ 是 $Y$ 的本征值，$\gamma$ 遍历 $\exp$ 的核（使 $e^{i\gamma}=\mathbb 1$ 的格点），$j(Y)$ 是指数映射的体积 Jacobian，也就是 Weyl 密度与平直密度之比。
 
-而最直接的加噪写法，抽 $\Xi\sim N(0,\mathbb 1_8)$ 然后取 $U_t=e^{is\Xi}U_0$，其过渡核是高斯经 $\exp$ 推前后的分布，相对 Haar 的密度是 $\mathrm{Gauss}(Y)/j(Y)$，与热核差一个 $\sqrt{j}$。它不是任何 SDE 的过渡核，两步复合也不再是同一族。$s$ 小时 $j\to1$ 差别消失，$s$ 大时两者都趋于 Haar，中间区间差别很大。用基本表示特征标的衰减可以定量看这一点。热核给 $E[\mathrm{Tr}\,e^{iY}]/3=e^{-2\Sigma/3}$（$C_F=4/3$），代数高斯的数值结果如下。
+而最直接的加噪写法，抽 $\Xi\sim N(0,\mathbb 1_8)$ 然后取 $U_t=e^{is\Xi}U_0$，其过渡核是高斯经 $\exp$ 推前后的分布，相对 Haar 的密度是 $\mathrm{Gauss}(Y)/j(Y)$，与热核差一个 $\sqrt{j}$。它不是任何 SDE 的过渡核，两步复合也不再是同一族。$s$ 小时 $j\to1$ 差别消失，$s$ 大时两者都趋于 Haar，中间区间差别很大。用基本表示特征标的衰减可以定量看这一点。热核给 $E[\mathrm{Tr}\,e^{iY}]/3=e^{-2\Sigma^2/3}$（$C_F=4/3$），代数高斯的数值结果如下。
 
 | $s$ | 代数高斯 $E[\mathrm{Tr}\,e^{is\Xi}]/3$ | 热核 $e^{-2s^2/3}$ | 比值 |
 |---|---|---|---|
@@ -60,13 +60,13 @@ $s=2$ 时特征标甚至变负。用这种噪声训练出的模型，其 score �
 
 既然推前密度与热核只差 $\sqrt j$，而 $\sqrt{j}\le1$，用接受-拒绝就能修正。抽 $Y=\sqrt\Delta\,\Xi$，以概率 $\sqrt{j(Y)}$ 接受，被拒绝的重抽。接受后 $e^{iY}$ 就是方差 $\Delta$ 的精确布朗增量。唯一的近似是忽略缠绕像 $\gamma\ne0$，最近的像权重为 $e^{-|\gamma|^2/2\Delta}$，$|\gamma|_{\min}=4\pi$，即 $e^{-79/\Delta}$，$\Delta\le1$ 时可以忽略。这就是 `heat_kernel_step` 做的事，`DELTA_MAX = 1.0`。
 
-$j(Y)$ 只依赖本征值，拒绝循环里本征值用三次方程的三角解 `eigvals_h3` 算，$\lambda^3-p\lambda-r=0$，$p=\mathrm{Tr}\,Y^2/2$，$r=\det Y$，比 `eigh` 快得多。到时刻 $t$ 的总方差 $\Sigma(t)$ 被拆成 $K=\lceil\Sigma/1\rceil$ 个子步。所有样本所有子步的增量与 $U$ 无关，先一次抽完再顺序乘上去，拒绝循环因此只跑一轮。$t\le0.43$ 时 $K=1$。
+$j(Y)$ 只依赖本征值，拒绝循环里本征值用三次方程的三角解 `eigvals_h3` 算，$\lambda^3-p\lambda-r=0$，$p=\mathrm{Tr}\,Y^2/2$，$r=\det Y$，比 `eigh` 快得多。到时刻 $t$ 的总方差 $\Sigma(t)^2$ 被拆成 $K=\max(1,\lceil\Sigma(t)^2/\mathrm{DELTA\_MAX}\rceil)$ 个子步，每步方差为 $\Delta=\Sigma(t)^2/K$。所有样本所有子步的增量与 $U$ 无关，先一次抽完再顺序乘上去，拒绝循环因此只跑一轮。$t\le0.37$ 时 $K=1$。
 
 验证。接受-拒绝后的增量特征标与 $e^{-2\Delta/3}$ 的比值在 $\Delta=0.3,0.5,1,2$ 分别为 1.0000、0.9987、0.9996、1.0002。四个 $\Delta=1$ 子步复合后为 0.0700，精确值 0.0695。
 
 ### 2.4 $\sigma$ 的选择
 
-$t=1$ 时的边缘分布应当是 Haar。基本表示特征标衰减到 $e^{-2\Sigma(1)/3}$，$\sigma=10$ 给 $\Sigma(1)=21.5$，$e^{-14}\approx10^{-6}$。生成时因此直接从 Haar 随机链出发。
+$t=1$ 时用 Haar 分布近似加噪后的边缘分布。基本表示特征标衰减到 $e^{-2\Sigma(1)^2/3}$。$\sigma=10$ 给 $\Sigma(1)^2\simeq21.4976$、$\Sigma(1)\simeq4.6365$，特征标保留因子约为 $5.97\times10^{-7}$。生成时直接从 Haar 随机链出发。
 
 ## 3. 训练目标。去噪 score 匹配
 
@@ -99,7 +99,7 @@ $K=1$ 时 $s\nabla\log K\approx-\Xi$，残差回到熟悉的 $s\cdot\text{score}
 
 $t$ 的采样密度取 $2(1-t)$ 而不是均匀。理由见第 6 节的 $t^*$ 扫描。$t\gtrsim0.5$ 处真实 score 接近零，网络很容易学到，样本应集中在可学习的区间。
 
-关于 loss 的量级要说一句。噪声的 8 个分量方差为 1，全零 score 的 loss 是 8。这个理论里 $\beta=6$ 的力很弱，可预测的噪声份额只有百分之几，所以 loss 从 8 降到 7.9 附近就接近下限，平台不代表没学到。判断是否学到的办法是分 $t$ 段与精确 Boltzmann 力比较。$t\to0$ 时 score 就是力 $-\tfrac\beta3\,\mathrm{Im}\,\mathrm{Tr}(T^aU\Sigma)$，训练后的模型在 $t<0.1$ 段的 loss 与力相同，在中等噪声段远好于力（力在那里已不是 score）。
+关于 loss 的量级要说一句。噪声的 8 个分量方差为 1，全零 score 的 loss 是 8。本节用 $H$ 表示两条 staple 的和。这个理论里 $\beta=6$ 的力很弱，可预测的噪声份额只有百分之几，所以 loss 从 8 降到 7.9 附近就接近下限，平台不代表没学到。判断是否学到的办法是分 $t$ 段与精确 Boltzmann 力比较。$t\to0$ 时 score 就是力 $-\tfrac\beta3\,\mathrm{Im}\,\mathrm{Tr}(T^aUH)$，训练后的模型在 $t<0.1$ 段的 loss 与力相同，在中等噪声段远好于力（力在那里已不是 score）。
 
 ## 4. 网络。精简 L-CNN
 
@@ -111,7 +111,7 @@ L-CNN（Favoni、Ipp、Müller、Schuh 2022）的思想是只用基于站点 $x$
 - L-Act。每个通道乘一个规范不变的门 $\mathrm{SiLU}\big(a_i\,\mathrm{Re}\,\mathrm{Tr}\,W_i/3+b_i(t)\big)$，时间通过 $b_i(t)$ 进入。
 - 读出。取末层各通道迹的实部虚部作为局域规范不变特征，与时间嵌入一起经 MLP 得到每站点每方向的复系数 $c_{\mu,i}(x,t)$，输出 $F_\mu(x)=\sum_ic_{\mu,i}(x,t)W_i(x)$，取无迹厄米部分后除以 $s(t)$。
 
-为什么这个结构够用。$t\to0$ 时精确 score 是 HMC 力。对 $\log p_0=\tfrac\beta3\sum\mathrm{Re}\,\mathrm{Tr}\,P$ 沿 $U\to e^{i\epsilon T^a}U$ 求导得 $s_a=-\tfrac\beta3\,\mathrm{Im}\,\mathrm{Tr}(T^aU\Sigma)$，其中 $U\Sigma=P(x)+\big[U_\nu(x-\hat\nu)^\dagger P(x-\hat\nu)U_\nu(x-\hat\nu)\big]^\dagger$ 正是原地 plaquette 与一次输运的 plaquette 之和。所以一层 L-Conv 加复系数读出就能精确表示 $t\to0$ 的 score，虚部靠复系数取得。更深的层和门控负责中等噪声下的非线性后验。
+为什么这个结构够用。$t\to0$ 时精确 score 是 HMC 力。对 $\log p_0=\tfrac\beta3\sum\mathrm{Re}\,\mathrm{Tr}\,P$ 沿 $U\to e^{i\epsilon T^a}U$ 求导得 $s_a=-\tfrac\beta3\,\mathrm{Im}\,\mathrm{Tr}(T^aUH)$，其中 $UH=P(x)+\big[U_\nu(x-\hat\nu)^\dagger P(x-\hat\nu)U_\nu(x-\hat\nu)\big]^\dagger$ 正是原地 plaquette 与一次输运的 plaquette 之和。所以一层 L-Conv 加复系数读出就能精确表示 $t\to0$ 的 score，虚部靠复系数取得。更深的层和门控负责中等噪声下的非线性后验。
 
 等变性检验。对随机 $\Omega(x)$ 比较 $S_\theta(\Omega U)$ 与 $\Omega S_\theta(U)\Omega^\dagger$。float32 下 2 层模型偏差 $2\times10^{-6}$，3 层模型 $3\times10^{-4}$，后者在 complex128 且输入严格幺正时为 $1.7\times10^{-13}$，说明 float32 读数是舍入与输入 $10^{-7}$ 非幺正性的放大，结构本身精确等变。
 
@@ -242,7 +242,7 @@ $L=16$，$\beta=6$，两种模型同为 CH=16、3 层、批 64、学习率 $2\ti
 要点是 7.2 节的定理。一步前向配随机反向，要么前向就是热核（布朗运动边缘），要么回归的不是噪声而是闭式的反向漂移。两条都做了。
 
 - **一步精确热核采样。** 把任意 $\Delta$ 的热核增量做成一步精确抽样，目标仍是热核 score，反向与 $\sigma$ 不变。做过，与随机游走无差别，脚本已删，见 7.6 节。
-- **Haar 端点路径，回归闭式漂移。** 固定耦合的一步族取 $U_\tau=e^{i\tau\Xi}U_0$，$\Xi=-i\log G$，$G$ 为 Haar，$\tau=s(t)/s(1)$。端点精确 Haar，速度 $\dot\tau\,\Xi$，条件密度 $j(\Xi)/(\tau^8j(\tau\Xi))$ 在 alcove 壁上连续地归零，条件 score $\nabla\log j(\Xi)/\tau-\nabla\log j(\tau\Xi)$ 闭式且方差有限。反向用 7.2 节的 flow 加 Langevin 形式，取 $\tilde g=g$。关键是漂移 $-v+\tfrac12g^2S$ 对 $v$ 和 $S$ 是线性的，而两者都是逐样本闭式量的条件期望，所以**一个头**回归 $(-v+\tfrac12g^2S)/g^2=-Y/2s^2+\tfrac12[(s_1/s)\nabla\log j(\Xi)-\nabla\log j(Y)]$ 即可，`sample_su3_em.py` 一行不改。$\Xi$ 按 Weyl 密度抽本征角再配 Haar 框架，不用 `eigh`。这是 `train_su3_loghaar.py`（$\sigma=2.15$ 使 $s(1)=1.54$，即 $\Xi$ 每生成元的 rms）。代数高斯路径则不可取，它相对 Haar 的密度 $G/j$ 在壁处像 $1/d^2$ 发散，score 头的目标方差无界。
+- **Haar 端点路径，回归闭式漂移。** 固定耦合的一步族取 $U_r=e^{ir\Xi}U_0$，$\Xi=-i\log G$，$G$ 为 Haar，$r(t)=\Sigma(t)/\Sigma(1)$ 是噪声尺度的比例。端点精确 Haar，速度 $\dot r\,\Xi$，条件密度 $j(\Xi)/(r^8j(r\Xi))$ 在 alcove 壁上连续地归零，条件 score $\nabla\log j(\Xi)/r-\nabla\log j(r\Xi)$ 闭式且方差有限。反向用 7.2 节的 flow 加 Langevin 形式，取 $\tilde g=g$。关键是漂移 $-v+\tfrac12g^2S$ 对 $v$ 和 $S$ 是线性的，而两者都是逐样本闭式量的条件期望，所以**一个头**回归 $(-v+\tfrac12g^2S)/g^2=-Y/2s^2+\tfrac12[(s_1/s)\nabla\log j(\Xi)-\nabla\log j(Y)]$ 即可，`sample_su3_em.py` 一行不改。$\Xi$ 按 Weyl 密度抽本征角再配 Haar 框架，不用 `eigh`。这是 `train_su3_loghaar.py`（$\sigma=2.15$ 使 $s(1)=1.54$，即 $\Xi$ 每生成元的 rms）。代数高斯路径则不可取，它相对 Haar 的密度 $G/j$ 在壁处像 $1/d^2$ 发散，score 头的目标方差无界。
 - **确定性 ODE。** 代数高斯是固定耦合，$v=\dot sE[\Xi|U]$ 精确，一行矩阵指数就是反向。问题是 ODE 对 score 误差没有自我修正，以及 $t=1$ 端点不是 Haar（7.1 节）。已定不走这条路，ODE 稳定性差。
 
 "一步、只回归噪声本身、随机反向"三者不可兼得。把回归目标换成闭式漂移（第二条）就都满足。
@@ -295,7 +295,7 @@ Haar 段在 $\Delta=2,\,3,\,4,\,6.25,\,21.5$ 的基础、adjoint、sextet 特征
 | Haar 端点路径 | 0.4149(9) / 0.0274(10) | 0.4178(10) / 0.0276(10) | 0.4187(10) / 0.0276(10) |
 | 欧氏空间高斯加噪 | 0.210(1) / 0.0007(9) | 0.224(1) / 0.0018(9) | 0.225(1) / 0.0022(10) |
 
-一步精确热核与随机游走同速，目标本来就相同。Haar 端点路径的 $W(2\times2)$ 早期上来稍慢，epoch 100 已收敛。每批 `log_haar` 42 ms（Weyl 密度拒绝约 40 轮，接受率 22%，Haar 框架 0.5 ms），没有 `eigh` 也没有子步。loss 平台 7.00 与热核版的 6.32 不可比，$\sigma$ 和目标都不同，偶有尖峰（epoch 48 为 7.12，epoch 88 为 7.54），来自 score 目标在 alcove 壁附近的重尾，对结果无害。目标的方差有限但随 $\tau$ 增大，$\tau=0.05,\,0.3,\,0.7,\,0.95$ 时 rms 为 39.9、6.35、2.03、0.63（按 $1/\tau$），最大值 732、122、51、32，样本均值为零到 $1.7\times10^{-3}$（Stein 恒等式）。`log_haar` 抽出的 $e^{i\Xi}$ 基础与 adjoint 特征标为 $2\times10^{-4}$ 与 $10^{-4}$，$\max|d_{ij}|/2\pi=0.997$，无迹到 $2\times10^{-7}$。
+一步精确热核与随机游走同速，目标本来就相同。Haar 端点路径的 $W(2\times2)$ 早期上来稍慢，epoch 100 已收敛。每批 `log_haar` 42 ms（Weyl 密度拒绝约 40 轮，接受率 22%，Haar 框架 0.5 ms），没有 `eigh` 也没有子步。loss 平台 7.00 与热核版的 6.32 不可比，$\sigma$ 和目标都不同，偶有尖峰（epoch 48 为 7.12，epoch 88 为 7.54），来自 score 目标在 alcove 壁附近的重尾，对结果无害。目标的方差有限，并随噪声尺度比例 $r$ 变化，$r=0.05,\,0.3,\,0.7,\,0.95$ 时 rms 为 39.9、6.35、2.03、0.63（按 $1/r$），最大值 732、122、51、32，样本均值为零到 $1.7\times10^{-3}$（Stein 恒等式）。`log_haar` 抽出的 $e^{i\Xi}$ 基础与 adjoint 特征标为 $2\times10^{-4}$ 与 $10^{-4}$，$\max|d_{ij}|/2\pi=0.997$，无迹到 $2\times10^{-7}$。
 
 ### 7.8 欧氏空间高斯加噪（已做，失败，脚本已删）
 

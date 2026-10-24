@@ -1,0 +1,48 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=9:mpiprocs=1
+#PBS -l walltime=01:00:00
+#PBS -W group_list=gw97
+#PBS -N su2_validation_9n
+#PBS -j oe
+#PBS -m n
+
+set -euo pipefail
+cd /work/gw97/w97000/project/DM/2DSUN
+
+if [[ -z "${OMPI_COMM_WORLD_RANK+x}" ]]; then
+    module list
+    exec mpirun -np 9 --map-by ppr:1:node --bind-to none \
+        -hostfile "${PBS_NODEFILE}" \
+        bash "${PWD}/src/Prolongation/validation_9node.pbs" "${PBS_JOBID}"
+fi
+
+# Offset zero is the completed 5120-configuration batch.
+offset=$((OMPI_COMM_WORLD_RANK + 1))
+seed=$((20261009 + offset))
+prefix="results/su2_network_validation/validation_n5120_offset${offset}"
+cache_dir="${TMPDIR:-/tmp}/su2_validation_${1}_${offset}"
+mkdir -p "$cache_dir" results/su2_network_validation
+trap 'rm -rf "$cache_dir"' EXIT
+
+export PATH="/work/gw97/w97000/envs/nenv2/bin:$PATH"
+# The batch default nvc rejects Triton's -Wno-psabi flag.
+export CC=/usr/bin/gcc CXX=/usr/bin/g++
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+export TORCHINDUCTOR_COMPILE_THREADS=4 PYTHONDONTWRITEBYTECODE=1
+export TORCHINDUCTOR_CACHE_DIR="$cache_dir/torch"
+export TRITON_CACHE_DIR="$cache_dir/triton"
+export MPLCONFIGDIR="$cache_dir/matplotlib"
+
+printf 'Offset %s on %s. Seed %s. Output %s\n' "$offset" "$(hostname)" "$seed" "$prefix"
+printf 'C compiler %s. C++ compiler %s\n' "$CC" "$CXX"
+set -o noclobber
+python3 -u src/Prolongation/refine_su2.py sample \
+    --fine 'trainningdata/cfgs_su2_beta=2.0_32^2.h5' \
+    --forward results/su2_prolongation_forward/scan_tau10.h5 \
+    --checkpoint results/su2_L32_beta2.0_lcnn_hk_c16l3/ckpt_epoch0300.pt \
+    --out "${prefix}.h5" --device cuda --n-cfgs 5120 \
+    --parent-offset "$offset" --seed "$seed" --eps 1e-5 \
+    --steps 50 100 200 400 600 800 1000 1200 1500 2000 \
+    > "${prefix}.log" 2>&1
+printf 'Offset %s finished.\n' "$offset"

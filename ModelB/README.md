@@ -135,6 +135,15 @@ python analysis/plot_coarsening_dm.py          # 扩散模型粗化图
 - `ml4ps2026/` 和 `reference_audit.md` 故意不进 Overleaf。`draft/arxiv/` 是 arXiv 打包快照，
   对应 `modelb_arxiv.tar.gz`，改稿只改根目录的 `modelb.tex` 再重新打包。
   `overleaf_modelb/` 是旧副本，不要推。
+- `draft/prl/` 是 PRL 投稿快照（2026-10-15 从根目录 `modelb.tex` 拆出）。`modelb.tex` 是正文加
+  End Matter，`supplement.tex` 是 SM，各自独立编译。图在 `prl/figures/` 里，目录和文件名
+  与根目录 `figures/` 相同，只含用到的 15 张。
+  跨文件引用全是手写编号。主文里写 Sec.~S1–S7、Fig.~S2、Fig.~S5，SM 里写主文的
+  Eq.~(5)(6)(9)–(13)、Fig.~2–5、Table~I。改稿后对照两边 `.aux` 的 `\newlabel` 核对。
+  `references.bib` 末尾的 `SuppMat` 条目是主文献表里的 SM 引用，`note` 里的 `\cite` 列出只在
+  SM 引用的 38 篇，让它们按 APS 要求出现在主文献表末尾。SM 的引用变了要同步改这个列表。
+  编译在 `prl/` 里做，`BIBINPUTS=..:` 让 bibtex 找到根目录的 bib，pdflatex 和 bibtex 各跑两轮
+  （`note` 里的 `\cite` 要第二轮 bibtex 才进 bbl）。APS 接收后要把 `.bbl` 粘进 `.tex`。
 - Miyabi 没有 latexmk，用 pdflatex 加 bibtex 编译。
 - ML4PS 2026 的 4 页短文 `draft/ml4ps2026/ml4ps2026.tex` 已投，2026-10-10 出通知，
   非 archival，双盲。arXiv 全文等通知后再挂，不单独挂 4 页版。

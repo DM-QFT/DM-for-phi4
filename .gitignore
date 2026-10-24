@@ -119,3 +119,9 @@ core.*
 # local backup of the Aug 2026 laptop package, 591 MB
 /ModelB_download_20260813.tar.gz
 /ModelB_download_20260813.tar.gz.sha256
+
+# URQMD 产物
+URQMD/trainingdata/
+URQMD/runs/
+URQMD/results/
+URQMD/logs/

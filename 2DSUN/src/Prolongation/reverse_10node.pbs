@@ -1,0 +1,85 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=10:mpiprocs=1
+#PBS -l walltime=01:00:00
+#PBS -W group_list=gw97
+#PBS -N su2_reverse_10n
+#PBS -j oe
+#PBS -m n
+
+set -euo pipefail
+cd /work/gw97/w97000/project/DM/2DSUN
+source /usr/share/Modules/init/bash
+module load julia/1.12.6
+
+job_id="${1:-${PBS_JOBID}}"
+job_number="${job_id%%.*}"
+prefix="${PWD}/results/su2_prolongation_reverse/reverse_tau1_1p5_3_train1024_epoch0500_${job_number}"
+rank="${OMPI_COMM_WORLD_RANK:-master}"
+cache_dir=$(mktemp -d "${TMPDIR:-/tmp}/su2_reverse_${job_id}_${rank}_XXXXXX")
+trap 'rm -rf "$cache_dir"' EXIT
+
+export PATH="/work/gw97/w97000/envs/nenv2/bin:/work/gw97/w97000/.local/bin:$PATH"
+export JULIA_DEPOT_PATH=/work/gw97/w97000/.julia
+# Triton requires gcc/g++. The batch default nvc rejects -Wno-psabi.
+export CC=/usr/bin/gcc CXX=/usr/bin/g++
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+export TORCHINDUCTOR_COMPILE_THREADS=4 PYTHONDONTWRITEBYTECODE=1
+export TORCHINDUCTOR_CACHE_DIR="$cache_dir/torch"
+export TRITON_CACHE_DIR="$cache_dir/triton"
+export MPLCONFIGDIR="$cache_dir/matplotlib"
+mkdir -p results/su2_prolongation_reverse
+set -o noclobber
+
+if [[ "$rank" == master ]]; then
+    module list
+    # Login shells initialize Miyabi's module variables on every remote node.
+    mpirun -np 10 --map-by ppr:1:node --bind-to none \
+        -hostfile "${PBS_NODEFILE}" \
+        bash -l "${PWD}/src/Prolongation/reverse_10node.pbs" "$job_id"
+
+    # All ten nodes finished. Pool configurations and recompute the errors on CPU.
+    python3 -u - "$prefix" > "${prefix}_n51200.log" 2>&1 <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, 'src/Prolongation')
+from refine_su2 import merge_refinement
+
+prefix = Path(sys.argv[1])
+parts = [prefix.with_name(prefix.name+f'_rank{rank}_n5120.h5') for rank in range(10)]
+output = prefix.with_name(prefix.name+'_n51200.h5')
+merge_refinement(parts, output)
+# The merged HDF5 contains physical copies of every configuration and observable.
+for part in parts:
+    for suffix in ('.h5', '.pdf', '.png', '_statistics.csv', '_comparison.csv', '_retention.csv', '_heat_kernel.csv'):
+        part.with_name(part.stem+suffix).unlink()
+print('Node data merged. Individual node logs retained.', flush=True)
+PY
+    printf 'Seven ensembles, each with 51200 configurations. Result %s_n51200.pdf\n' "$prefix"
+    exit 0
+fi
+
+# Disjoint fine inputs 20*j+rank+10 and references 20*j+rank.
+seed=$((20271002 + 100*rank))
+coarse_seed=$((20371002 + rank))
+part="${prefix}_rank${rank}_n5120"
+{
+    printf 'Rank %s on %s. Sampling seed %s. Coarse seed %s\n' "$rank" "$(hostname)" "$seed" "$coarse_seed"
+    module list
+    # Each node generates its own coarse MC chain. No repeated coarse parents.
+    julia --startup-file=no -t 4 trainningdata/su2_2d_heatbath.jl \
+        --beta 0.1408904756906944 --L 16 --n_cfgs 5120 \
+        --n_therm 2000 --n_skip 160 --n_or 3 --seed "$coarse_seed" \
+        --out "$cache_dir"
+
+    python3 -u src/Prolongation/refine_su2.py sample \
+        --coarse "$cache_dir/cfgs_su2_beta=0.1408904756906944_16^2.h5" \
+        --initializations fine relaxed \
+        --fine 'trainningdata/cfgs_su2_beta=2.0_32^2.h5' \
+        --forward results/su2_prolongation_forward/scan_tau10.h5 \
+        --checkpoint results/su2_L32_beta2.0_lcnn_hk_c16l3_n1024_b64_e500/ckpt_epoch0500.pt \
+        --out "${part}.h5" --device cuda --n-cfgs 5120 \
+        --parent-offset "$rank" --seed "$seed" --eps 1e-5 \
+        --steps 696 829 1070
+    printf 'Rank %s finished all seven ensembles.\n' "$rank"
+} > "${part}.log" 2>&1

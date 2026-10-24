@@ -125,7 +125,7 @@ Moreover / Furthermore / Additionally / Notably 在一篇里合计不超过三�
 
 **叙事与结构。** 目标 PRL。主线依次是自治系统，时齐 Markov kernel 由成对数据唯一确定且复合外推严格成立（误差只来自学习），Hohenberg–Halperin，Model B，VE-SDE，训练族外初态看相分离，粗化标度，临界标度，multi-L 延拓。Sec II 独立讲 kernel 与复合。结果部分不加标题和 subsection。End Matter 放胶体 Fig.5 和 wall-time 表。SM 在 `\bibliography` 之后，编号带 S 前缀。摘要不写数值。PRL 摘要上限 600 字符含空格，改摘要要数字符。2026-09-26 合作者重写后的版本是 1060 字符。
 
-**记号。** 尽量与 arXiv:2607.08505 统一。configuration 或 field，不叫 state。Markovian。Δφ 叫 increment。η∼N(0,𝟙)。扩散时间 s，物理时间 t，弛豫时间 τ_n。直接积分统一叫 SOSRA，"Model B" 只指物理模型。不用 rollout，说迭代生成。"lag" 只零星用，ρ_n(Δt) 的自变量写 time separation Δt、grid points、retained range。
+**记号。** 尽量与 arXiv:2607.08505 统一。configuration 或 field，不叫 state。Markovian。Δφ 叫 increment。η∼N(0,𝟙)。扩散时间 s，物理时间 t，弛豫时间 τ_n。直接积分统一叫 SOSRA，"Model B" 只指物理模型。不用 rollout，说迭代生成。不用 "lag"。δt 在定义处叫 time interval，之后只写符号 δt。不写 training interval，胶体部分已有 training window。一次 kernel 应用叫 step，step size 只指 SOSRA 和反向积分器。ρ_n(Δt) 的自变量写 time separation Δt、grid points、retained range。
 
 **数字。** 数字保持数字形式（About $1200$ tracks、$60$ min）。精简时每个数值要么整个删掉改成定性陈述，要么原样保留，不写成 twelve hundred。速度主张写 "five to a hundred times faster than general-purpose GPU SDE implementations and as fast as a hand-optimized SOSRA integrator"。尺寸迁移写 "twice the largest training size"。
 

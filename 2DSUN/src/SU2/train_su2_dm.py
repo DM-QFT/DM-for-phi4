@@ -1,4 +1,4 @@
-# Score-based diffusion (VE-SDE, sigma^t) for 2D SU(2) gauge configurations from su2_2d_heatbath.jl, the SU(2) version of
+# Score-based diffusion with a beta-dependent noise schedule for 2D SU(2) gauge configurations from su2_2d_heatbath.jl, the SU(2) version of
 # ../SU3/train_su3_dm.py.  Links are unit quaternions U = a0 + i a⃗·σ stored as real (…, 4) tensors, su(2) elements
 # Y = ξ·σ/2 as real 3-vectors ξ (T^a = σ^a/2, |Y|² = Σ ξ_a²).  Brownian motion on SU(2)^links is a random walk of exact
 # heat-kernel increments U ← exp(iY) U, and the DSM target is the analytic heat-kernel score of the last increment; for
@@ -18,28 +18,39 @@ from torch_ema import ExponentialMovingAverage
 
 torch.set_default_device("cuda")
 
-L = 32
-BETA = 2.0
-DATA = f"/work/gw97/w97000/project/DM/2DSUN/trainningdata/cfgs_su2_beta={BETA}_{L}^2.h5"
-SIGMA = 14.0  # Σ(1) = 36.9: the fundamental character has decayed to e^{-3Σ/8} = 1e-6 (C_F = 3/4), the t=1 marginal is Haar
+L = 128
+BETA = 200.0
+DATA = f"/work/gw97/w97000/project/DM/2DSUN/trainningdata/cfgs_su2_beta={BETA}_{L}^2_n5120.h5"
+SIGMA = 14.0  # Retain the old endpoint Σ(1)^2 = (14^2 - 1)/(2 log 14) = 36.945, close to Haar.
 DELTA_MAX = 1.0  # variance per heat-kernel increment; exp(iY) = 1 first at θ = 4π, so the nearest wrapping image weighs e^{-79/Δ}
-CH = 16
+CH = 32
 NLAYERS = 3
-OUT = f"/work/gw97/w97000/project/DM/2DSUN/results/su2_L{L}_beta{BETA}_lcnn_hk_c{CH}l{NLAYERS}"
 BATCH = 64
-EPOCHS = 100
+EPOCHS = 500
+SAVE_EPOCHS = np.unique(np.rint(np.geomspace(1, EPOCHS, 10)).astype(int)).tolist()
+OUT = f"/work/gw97/w97000/project/DM/2DSUN/results/su2_L{L}_beta{BETA}_lcnn_hk_c{CH}l{NLAYERS}_n5120_b{BATCH}_e{EPOCHS}_betanoise"
 LR = 2e-4
 EMA_DECAY = 0.999
 EPS = 1e-5
 SEED = 0
 
 
-def marginal_prob_std(t, sigma):
-    return torch.sqrt((sigma ** (2 * t) - 1.0) / 2.0 / np.log(sigma))
+def marginal_prob_std(t, sigma, noise_beta=None):
+    if noise_beta is None:
+        return torch.sqrt((sigma ** (2 * t) - 1.0) / 2.0 / np.log(sigma))
+    # Σ(t)^2 = expm1(t log(1 + beta Σ(1)^2)) / beta.
+    variance_max = (sigma**2 - 1) / (2 * math.log(sigma))
+    rate = math.log1p(noise_beta * variance_max)
+    return torch.sqrt(torch.expm1(rate * t) / noise_beta)
 
 
-def diffusion_coeff(t, sigma):
-    return sigma**t
+def diffusion_coeff(t, sigma, noise_beta=None):
+    if noise_beta is None:
+        return sigma**t
+    # g(t)^2 = dΣ(t)^2/dt, using the same schedule as the training noise.
+    variance_max = (sigma**2 - 1) / (2 * math.log(sigma))
+    rate = math.log1p(noise_beta * variance_max)
+    return math.sqrt(rate / noise_beta) * torch.exp(0.5 * rate * t)
 
 
 def bc(s):
@@ -57,18 +68,163 @@ def qmul(p, q):
     return torch.cat([p0 * q0 - (pv * qv).sum(-1, keepdim=True), p0 * qv + q0 * pv - torch.linalg.cross(pv, qv)], -1)
 
 
+@triton.jit
+def _mm(a, b):
+    # three TF32 tensor-core products of the split operands, float32 accuracy
+    return tl.dot(a, b, input_precision="tf32x3")
+
+
+@triton.jit
+def _split4(X, C: tl.constexpr, S: tl.constexpr):
+    # (C, 4S) tile in memory order (site, q) → its four (C, S) quaternion components
+    x02, x13 = tl.split(tl.reshape(X, (C, S, 2, 2)))
+    x0, x2 = tl.split(x02)
+    x1, x3 = tl.split(x13)
+    return x0, x1, x2, x3
+
+
+@triton.jit
+def _join4(x0, x1, x2, x3, C: tl.constexpr, S: tl.constexpr):
+    return tl.reshape(tl.join(tl.join(x0, x2), tl.join(x1, x3)), (C, 4 * S))
+
+
+@triton.jit
+def _qbil_fwd(X, Wb, Wl, Wc, Out, N: tl.constexpr, C: tl.constexpr, S: tl.constexpr):
+    # out_k = Σ_j A_kj W_j, A_kj = Σ_i w_kij W_i, one j at a time on S sites
+    b = tl.program_id(1)
+    n = tl.program_id(0) * S + tl.arange(0, S)
+    c = tl.arange(0, C)
+    X += b * C * N * 4
+    Out += b * C * N * 4
+    off = c[None, :] * N * 4 + n[:, None] * 4
+    x0 = tl.load(X + off)
+    x1 = tl.load(X + off + 1)
+    x2 = tl.load(X + off + 2)
+    x3 = tl.load(X + off + 3)
+    w = tl.load(Wl + c[:, None] * C + c[None, :])
+    o0 = _mm(x0, w) + tl.load(Wc + c)[None, :]
+    o1 = _mm(x1, w)
+    o2 = _mm(x2, w)
+    o3 = _mm(x3, w)
+    for j in range(C):
+        w = tl.load(Wb + j * C * C + c[:, None] * C + c[None, :])
+        a0 = _mm(x0, w)
+        a1 = _mm(x1, w)
+        a2 = _mm(x2, w)
+        a3 = _mm(x3, w)
+        y0 = tl.load(X + j * N * 4 + n * 4)[:, None]
+        y1 = tl.load(X + j * N * 4 + n * 4 + 1)[:, None]
+        y2 = tl.load(X + j * N * 4 + n * 4 + 2)[:, None]
+        y3 = tl.load(X + j * N * 4 + n * 4 + 3)[:, None]
+        o0 += a0 * y0 - a1 * y1 - a2 * y2 - a3 * y3
+        o1 += a0 * y1 + a1 * y0 - a2 * y3 + a3 * y2
+        o2 += a0 * y2 + a2 * y0 - a3 * y1 + a1 * y3
+        o3 += a0 * y3 + a3 * y0 - a1 * y2 + a2 * y1
+    tl.store(Out + off, o0)
+    tl.store(Out + off + 1, o1)
+    tl.store(Out + off + 2, o2)
+    tl.store(Out + off + 3, o3)
+
+
+@triton.jit
+def _qbil_bwd_x(X, G, Wp, Wm, Wl, Gx, N: tl.constexpr, C: tl.constexpr, S: tl.constexpr):
+    # ∂/∂W_m = Σ_l (H_ml W̄_l + W̄_l E_lm), H_ml = Σ_k w_kml g_k, E_lm = Σ_k w_klm g_k, since <p, a b> = <p b̄, a> = <ā p, b>.
+    # Only H ± E enter: the scalar part is x̄₀(H+E)₀ − x̄⃗·(H+E)⃗, the vector part x̄₀(H+E)⃗ + (H+E)₀x̄⃗ − (H−E)⃗×x̄⃗.
+    b = tl.program_id(1)
+    n = tl.program_id(0) * S + tl.arange(0, S)
+    c = tl.arange(0, C)
+    X += b * C * N * 4
+    G += b * C * N * 4
+    Gx += b * C * N * 4
+    off = c[None, :] * N * 4 + n[:, None] * 4
+    g0 = tl.load(G + off)
+    g1 = tl.load(G + off + 1)
+    g2 = tl.load(G + off + 2)
+    g3 = tl.load(G + off + 3)
+    w = tl.load(Wl + c[:, None] * C + c[None, :])
+    o0 = _mm(g0, w)
+    o1 = _mm(g1, w)
+    o2 = _mm(g2, w)
+    o3 = _mm(g3, w)
+    for l in range(C):
+        w = tl.load(Wp + l * C * C + c[:, None] * C + c[None, :])
+        s0 = _mm(g0, w)
+        s1 = _mm(g1, w)
+        s2 = _mm(g2, w)
+        s3 = _mm(g3, w)
+        w = tl.load(Wm + l * C * C + c[:, None] * C + c[None, :])
+        d1 = _mm(g1, w)
+        d2 = _mm(g2, w)
+        d3 = _mm(g3, w)
+        y0 = tl.load(X + l * N * 4 + n * 4)[:, None]
+        y1 = tl.load(X + l * N * 4 + n * 4 + 1)[:, None]
+        y2 = tl.load(X + l * N * 4 + n * 4 + 2)[:, None]
+        y3 = tl.load(X + l * N * 4 + n * 4 + 3)[:, None]
+        o0 += y0 * s0 + y1 * s1 + y2 * s2 + y3 * s3
+        o1 += y0 * s1 - s0 * y1 + d2 * y3 - d3 * y2
+        o2 += y0 * s2 - s0 * y2 + d3 * y1 - d1 * y3
+        o3 += y0 * s3 - s0 * y3 + d1 * y2 - d2 * y1
+    tl.store(Gx + off, o0)
+    tl.store(Gx + off + 1, o1)
+    tl.store(Gx + off + 2, o2)
+    tl.store(Gx + off + 3, o3)
+
+
+@triton.jit
+def _qbil_bwd_w(X, G, P, N: tl.constexpr, C: tl.constexpr, S: tl.constexpr, JB: tl.constexpr):
+    # ∂/∂w_kij = Σ_x <g_k W̄_j, W_i>, JB values of j per program; tiles are read in memory order, so (site, q) is one
+    # contraction index of length 4S
+    b = tl.program_id(1)
+    c = tl.arange(0, C)
+    j = tl.program_id(0) * JB + tl.arange(0, JB)
+    r = tl.arange(0, 4 * S)
+    X += b * C * N * 4
+    G += b * C * N * 4
+    acc = tl.zeros((JB * C, C), tl.float32)
+    for t in range(N // S):
+        # splitting after the broadcast reshape keeps the register layout of the products (38 spills otherwise)
+        g02, g13 = tl.split(tl.reshape(tl.load(G + c[:, None] * N * 4 + t * S * 4 + r[None, :]), (1, C, S, 2, 2)))
+        g0, g2 = tl.split(g02)
+        g1, g3 = tl.split(g13)
+        y02, y13 = tl.split(tl.reshape(tl.load(X + j[:, None] * N * 4 + t * S * 4 + r[None, :]), (JB, 1, S, 2, 2)))
+        y0, y2 = tl.split(y02)
+        y1, y3 = tl.split(y13)
+        z = _join4(g0 * y0 + g1 * y1 + g2 * y2 + g3 * y3, g1 * y0 - g0 * y1 + g2 * y3 - g3 * y2,
+                   g2 * y0 - g0 * y2 + g3 * y1 - g1 * y3, g3 * y0 - g0 * y3 + g1 * y2 - g2 * y1, JB * C, S)
+        acc += _mm(z, tl.load(X + c[None, :] * N * 4 + t * S * 4 + r[:, None]))
+    k = tl.arange(0, JB * C)
+    tl.store(P + ((b * C + tl.program_id(0) * JB) * C + k[:, None]) * C + c[None, :], acc)
+
+
+class QBilinear(torch.autograd.Function):
+    # The GEMM form A = W·w stores (B L² 4) × 32 × 33 floats, 17.7 GB per layer at B=64, L=128; here A lives in registers.
+    @staticmethod
+    def forward(ctx, X, wb, wl, wc):
+        X = X.contiguous()
+        B, C, Lx, Ly, _ = X.shape
+        out = torch.empty_like(X)
+        _qbil_fwd[(Lx * Ly // 32, B)](X, wb.permute(2, 1, 0).contiguous(), wl.t().contiguous(), wc.contiguous(), out,
+                                      Lx * Ly, C, 32, num_warps=2)
+        ctx.save_for_backward(X, wb, wl)
+        return out
+
+    @staticmethod
+    def backward(ctx, g):
+        X, wb, wl = ctx.saved_tensors
+        B, C, Lx, Ly, _ = X.shape
+        g = g.contiguous()
+        gx = torch.empty_like(X)
+        w1, w2 = wb.permute(2, 0, 1), wb.permute(1, 0, 2)
+        _qbil_bwd_x[(Lx * Ly // 16, B)](X, g, (w1 + w2).contiguous(), (w1 - w2).contiguous(), wl.contiguous(), gx,
+                                        Lx * Ly, C, 16, num_warps=2)
+        P = torch.empty(B, C, C, C, device=X.device)
+        _qbil_bwd_w[(C // 8, B)](X, g, P, Lx * Ly, C, 8, 8, num_warps=4)
+        return gx, P.sum(0).permute(1, 2, 0), torch.einsum("bkxyq,bixyq->ki", g, X), g[..., 0].sum((0, 2, 3))
+
+
 def qbilinear(weight, W):
-    # Sum_ij weight[k,i,j] W_i W_j, keeping the reduced channel j contiguous.
-    v = W.permute(0, 2, 3, 4, 1)
-    # Flatten explicitly so inference uses one large GEMM instead of tiny batched GEMMs.
-    a = (v.reshape(-1, W.shape[1]) @ weight.permute(1, 0, 2).flatten(1)).reshape(*v.shape[:-1], weight.shape[0], weight.shape[2])
-    a0, a1, a2, a3 = a.unbind(-3)
-    b0, b1, b2, b3 = v.unsqueeze(-2).unbind(-3)
-    out = torch.stack(((a0*b0 - a1*b1 - a2*b2 - a3*b3).sum(-1),
-                       (a0*b1 + a1*b0 - a2*b3 + a3*b2).sum(-1),
-                       (a0*b2 + a2*b0 - a3*b1 + a1*b3).sum(-1),
-                       (a0*b3 + a3*b0 - a1*b2 + a2*b1).sum(-1)), -1)
-    return out.permute(0, 3, 1, 2, 4)
+    # Σ_ij weight[k,i,j] W_i W_j over W_0 = 1 and the channels of W: constant w_k00, linear w_k0i + w_ki0, bilinear rest
+    return QBilinear.apply(W, weight[:, 1:, 1:], weight[:, 0, 1:] + weight[:, 1:, 0], weight[:, 0, 0])
 
 
 def conj(q):
@@ -104,6 +260,123 @@ def transport(W, U):
         Ub = roll(Um, mu, -1)
         out.append(qmul(qmul(conj(Ub), roll(W, mu, -1)), Ub))
     return torch.cat(out, 1)
+
+
+@triton.jit
+def _shift(n, d: tl.constexpr, L: tl.constexpr):
+    # site index of x + d for d = 0, +e₀, −e₀, +e₁, −e₁ (the order of transport), n = x L + y, periodic
+    m = n
+    if d == 1:
+        m = (n + L) % (L * L)
+    elif d == 2:
+        m = (n + L * L - L) % (L * L)
+    elif d == 3:
+        m = n - n % L + (n + 1) % L
+    elif d == 4:
+        m = n - n % L + (n + L - 1) % L
+    return m
+
+
+@triton.jit
+def _ad(U, n, d: tl.constexpr, L: tl.constexpr, z0, z1, z2, z3):
+    # u z ū = (|u|² z₀, (u₀² − |u⃗|²) z⃗ + 2(u⃗·z⃗) u⃗ − 2u₀ u⃗×z⃗) with the link of transport, u = U_μ(x) or Ū_μ(x − μ)
+    U += (d - 1) // 2 * L * L * 4
+    if d % 2 == 1:
+        U += n * 4
+    else:
+        U += _shift(n, d, L) * 4
+    s = 1 - 2 * ((d - 1) % 2)
+    u0 = tl.load(U)[None, :]
+    u1 = s * tl.load(U + 1)[None, :]
+    u2 = s * tl.load(U + 2)[None, :]
+    u3 = s * tl.load(U + 3)[None, :]
+    uu = u1 * u1 + u2 * u2 + u3 * u3
+    a = u0 * u0 - uu
+    p = 2 * (u1 * z1 + u2 * z2 + u3 * z3)
+    return ((u0 * u0 + uu) * z0, a * z1 + p * u1 - 2 * u0 * (u2 * z3 - u3 * z2),
+            a * z2 + p * u2 - 2 * u0 * (u3 * z1 - u1 * z3), a * z3 + p * u3 - 2 * u0 * (u1 * z2 - u2 * z1))
+
+
+@triton.jit
+def _tconv(W, U, Wt, Out, L: tl.constexpr, C: tl.constexpr, S: tl.constexpr):
+    # Out(x) = Σ_d w_d Ad[u_d(x)] W(x + d) on S sites, the einsum of the conv weights with transport(W, U).  Ad acts on
+    # the quaternion index only and commutes with the channel weights.
+    b = tl.program_id(1)
+    n0 = tl.program_id(0) * S
+    n = n0 + tl.arange(0, S)
+    r = tl.arange(0, 4 * S)
+    c = tl.arange(0, C)
+    W += b * C * L * L * 4
+    U += b * 2 * L * L * 4
+    Out += b * C * L * L * 4
+    o0 = tl.zeros((C, S), tl.float32)
+    o1 = tl.zeros((C, S), tl.float32)
+    o2 = tl.zeros((C, S), tl.float32)
+    o3 = tl.zeros((C, S), tl.float32)
+    for d in tl.static_range(5):
+        x0, x1, x2, x3 = _split4(tl.load(W + c[:, None] * L * L * 4 + (_shift(n0 + r // 4, d, L) * 4 + r % 4)[None, :]),
+                                 C, S)
+        if d > 0:
+            x0, x1, x2, x3 = _ad(U, n, d, L, x0, x1, x2, x3)
+        o0 += _mm(tl.load(Wt + 2 * d * C * C + c[:, None] * C + c[None, :]), x0)
+        w = tl.load(Wt + (2 * d + 1) * C * C + c[:, None] * C + c[None, :])
+        o1 += _mm(w, x1)
+        o2 += _mm(w, x2)
+        o3 += _mm(w, x3)
+    tl.store(Out + c[:, None] * L * L * 4 + n0 * 4 + r[None, :], _join4(o0, o1, o2, o3, C, S))
+
+
+@triton.jit
+def _tconv_bwd_w(W, U, G, P, L: tl.constexpr, C: tl.constexpr, S: tl.constexpr, T: tl.constexpr, d: tl.constexpr):
+    # ∂/∂w_d = Σ_x <g(x), Ad[u_d(x)] W(x + d)> for the scalar and the vector weights over T tiles of S sites
+    b = tl.program_id(1)
+    c = tl.arange(0, C)
+    r = tl.arange(0, 4 * S)
+    W += b * C * L * L * 4
+    U += b * 2 * L * L * 4
+    G += b * C * L * L * 4
+    accs = tl.zeros((C, C), tl.float32)
+    accv = tl.zeros((C, C), tl.float32)
+    for t in range(tl.program_id(0) * T, (tl.program_id(0) + 1) * T):
+        n0 = t * S
+        x0, x1, x2, x3 = _split4(tl.load(W + c[:, None] * L * L * 4 + (_shift(n0 + r // 4, d, L) * 4 + r % 4)[None, :]),
+                                 C, S)
+        if d > 0:
+            x0, x1, x2, x3 = _ad(U, n0 + tl.arange(0, S), d, L, x0, x1, x2, x3)
+        z = tl.zeros_like(x0)
+        g = tl.load(G + c[:, None] * L * L * 4 + n0 * 4 + r[None, :])
+        accs += _mm(g, tl.trans(_join4(x0, z, z, z, C, S)))
+        accv += _mm(g, tl.trans(_join4(z, x1, x2, x3, C, S)))
+    P += ((d * tl.num_programs(0) + tl.program_id(0)) * tl.num_programs(1) + b) * 2 * C * C + c[:, None] * C + c[None, :]
+    tl.store(P, accs)
+    tl.store(P + C * C, accv)
+
+
+class TConv(torch.autograd.Function):
+    # The einsum over transport(W, U) stores 5 ch transported loops per site, 2.7 GB at B=64, L=128, ch=32.
+    @staticmethod
+    def forward(ctx, W, U, conv):
+        W, U = W.contiguous(), U.contiguous()
+        B, C, L, _, _ = W.shape
+        out = torch.empty_like(W)
+        _tconv[(L * L // 64, B)](W, U, conv.view(2, C, 5, C).permute(2, 0, 1, 3).contiguous(), out, L, C, 64, num_warps=4)
+        ctx.save_for_backward(W, U, conv)
+        return out
+
+    @staticmethod
+    def backward(ctx, g):
+        W, U, conv = ctx.saved_tensors
+        B, C, L, _, _ = W.shape
+        g = g.contiguous()
+        gW = torch.empty_like(W)
+        # transport to x from x + μ is the adjoint of transport to x from x − μ: swap the ±μ blocks, transpose the weights
+        w = conv.view(2, C, 5, C)[:, :, [0, 2, 1, 4, 3]].permute(2, 0, 3, 1).contiguous()
+        _tconv[(L * L // 64, B)](g, U, w, gW, L, C, 64, num_warps=4)
+        ns = max(1, L * L // 2048)
+        P = torch.empty(5, ns * B, 2, C, C, device=W.device)
+        for d in range(5):
+            _tconv_bwd_w[(ns, B)](W, U, g, P, L, C, 16, L * L // 16 // ns, d, num_warps=2)
+        return gW, None, P.sum(1).permute(1, 2, 0, 3).reshape(2, C, 5 * C)
 
 
 @triton.jit
@@ -147,15 +420,75 @@ def heat_kernel_step(shape, delta):
     return Y
 
 
+@triton.jit
+def _brownian(U0, Delta, Kn, Seed, Ut, Y, NL, NT, BLOCK: tl.constexpr):
+    # K increments per link drawn as in _heat_kernel_draw and multiplied from the left in registers. K and Δ belong to
+    # the configuration, and a block never spans two configurations (NL ≥ BLOCK links each).
+    idx = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    b = tl.program_id(0) * BLOCK // NL
+    sd = tl.sqrt(tl.load(Delta + b))
+    K = tl.load(Kn + b)
+    seed = tl.load(Seed)
+    g0 = tl.full((BLOCK,), 1, tl.float32)
+    g1 = tl.zeros((BLOCK,), tl.float32)
+    g2 = tl.zeros((BLOCK,), tl.float32)
+    g3 = tl.zeros((BLOCK,), tl.float32)
+    x = tl.zeros((BLOCK,), tl.float32)
+    y = tl.zeros((BLOCK,), tl.float32)
+    z = tl.zeros((BLOCK,), tl.float32)
+    for k in range(K):
+        accepted = idx < 0
+        attempt = 0
+        while tl.sum((~accepted).to(tl.int32), 0) > 0:
+            # Philox counters unique in (link, substep, retry), separate ones for proposal and acceptance
+            counter = 2 * (idx.to(tl.uint64) + (attempt * K + k).to(tl.uint64) * NT)
+            a, bb, c, _ = tl.randn4x(seed, counter)
+            a, bb, c = sd * a, sd * bb, sd * c
+            th = tl.sqrt(a * a + bb * bb + c * c)
+            prob = tl.where(th > 1e-2, tl.sin(th / 2) / (th / 2), 1 - th * th / 24)
+            ok = (~accepted) & (tl.rand(seed, counter + 1) < prob)
+            x, y, z = tl.where(ok, a, x), tl.where(ok, bb, y), tl.where(ok, c, z)
+            accepted = accepted | ok
+            attempt += 1
+        # G ← exp(iY·σ/2) G with exp(iY·σ/2) = (cos(θ/2), sin(θ/2) Y/θ)
+        th = tl.sqrt(x * x + y * y + z * z)
+        e0 = tl.cos(th / 2)
+        s = tl.where(th > 1e-2, tl.sin(th / 2) / th, 0.5 - th * th / 48)
+        e1, e2, e3 = s * x, s * y, s * z
+        g0, g1, g2, g3 = (e0 * g0 - e1 * g1 - e2 * g2 - e3 * g3, e0 * g1 + g0 * e1 - e2 * g3 + e3 * g2,
+                          e0 * g2 + g0 * e2 - e3 * g1 + e1 * g3, e0 * g3 + g0 * e3 - e1 * g2 + e2 * g1)
+    u0 = tl.load(U0 + 4 * idx)
+    u1 = tl.load(U0 + 4 * idx + 1)
+    u2 = tl.load(U0 + 4 * idx + 2)
+    u3 = tl.load(U0 + 4 * idx + 3)
+    tl.store(Ut + 4 * idx, g0 * u0 - g1 * u1 - g2 * u2 - g3 * u3)
+    tl.store(Ut + 4 * idx + 1, g0 * u1 + u0 * g1 - g2 * u3 + g3 * u2)
+    tl.store(Ut + 4 * idx + 2, g0 * u2 + u0 * g2 - g3 * u1 + g1 * u3)
+    tl.store(Ut + 4 * idx + 3, g0 * u3 + u0 * g3 - g1 * u2 + g2 * u1)
+    tl.store(Y + 3 * idx, x)
+    tl.store(Y + 3 * idx + 1, y)
+    tl.store(Y + 3 * idx + 2, z)
+
+
+def brownian(U0, delta, K):
+    # U_t = exp(iY_K)…exp(iY_1) U₀ with K heat-kernel increments of variance δ per configuration, and the last one Y_K
+    Ut = torch.empty_like(U0)
+    Y = torch.empty((*U0.shape[:-1], 3), device=U0.device)
+    seed = torch.randint(0, 2**63 - 1, (), device=U0.device, dtype=torch.int64)
+    _brownian[(U0.numel() // 512,)](U0, delta, K.int(), seed, Ut, Y, U0[0].numel() // 4, U0.numel() // 4, 128)
+    return Ut, Y
+
+
 def heat_kernel_score(Y, delta):
     # ∇log K_Δ(exp iY) = −Y/Δ − ½ ∇log j(Y) = −Y [1/Δ + (½ cot(θ/2) − 1/θ)/θ], using ∇θ = Y/θ
     return -Y * (1 / delta + dlog_sinc_half_over(Y.norm(dim=-1)))[..., None]
 
 
 class LCNN(nn.Module):
-    def __init__(self, ch, nlayers, sigma):
+    def __init__(self, ch, nlayers, sigma, noise_beta=None):
         super().__init__()
         self.ch, self.sigma = ch, sigma
+        self.noise_beta = noise_beta
         self.conv = nn.ParameterList()  # (2, ch, 5 cin): one real weight for the scalar part of a loop, one for its vector part
         self.bilin = nn.ParameterList()
         self.gate_a = nn.ParameterList()
@@ -172,48 +505,39 @@ class LCNN(nn.Module):
         self.readout = nn.Sequential(nn.Linear(ch + 64, 64), nn.SiLU(), nn.Linear(64, 2 * ch))
 
     def forward(self, U, t):
-        s = marginal_prob_std(t, self.sigma)
-        h = self.temb(torch.log(s)[:, None])
+        Sigma = marginal_prob_std(t, self.sigma, self.noise_beta)
+        h = self.temb(torch.log(Sigma)[:, None])
         W = plaquette(U)[:, None]
         B, _, Lx, Ly, _ = W.shape
-        one = torch.zeros(B, 1, Lx, Ly, 4)
-        one[..., 0] = 1
         for conv, bilin, a, b in zip(self.conv, self.bilin, self.gate_a, self.gate_b):
-            # Keep batch separate so the weight gradient uses many small reductions in parallel.
-            weights = conv[[0, 1, 1, 1]].expand(B, -1, -1, -1)
-            W = torch.einsum("bqoc,bcxyq->boxyq", weights, transport(W, U))
-            Wi = torch.cat([one, W], 1)
-            W = qbilinear(bilin, Wi)
+            if W.shape[1] == 1:
+                # the plaquette channel alone is narrower than a tensor-core tile (16)
+                # Keep batch separate so the weight gradient uses many small reductions in parallel.
+                weights = conv[[0, 1, 1, 1]].expand(B, -1, -1, -1)
+                W = torch.einsum("bqoc,bcxyq->boxyq", weights, transport(W, U))
+            else:
+                W = TConv.apply(W, U, conv)
+            W = qbilinear(bilin, W)
             # bounded gate: with SiLU the bilinear product times the gate grows cubically per layer and the q0
             # fluctuations of SU(2) loops (std 1/2) blow up the tails at initialisation (|W| ~ 300 at some sites)
             gate = torch.sigmoid(a[None, :, None, None] * W[..., 0] + b(h)[:, :, None, None])
             W = W * gate[..., None]
         feat = torch.cat([W[..., 0], h[:, :, None, None].expand(-1, -1, Lx, Ly)], 1).permute(0, 2, 3, 1)
-        c = self.readout(feat).view(B, Lx, Ly, 2, self.ch)
-        return torch.einsum("bxymc,bcxyv->bmxyv", c, W[..., 1:]) / bc(s)
+        c = self.readout(feat).view(B, Lx, Ly, 2, self.ch).permute(0, 3, 4, 1, 2)
+        # a broadcast sum is one fused kernel; the einsum becomes B L² batched 2×ch·ch×3 GEMMs in 16 cuBLAS calls
+        return (c[..., None] * W[:, None, ..., 1:]).sum(2) / bc(Sigma)
 
 
 def loss_fn(model, U0):
-    # t with density 2(1−t): the score is only learnable for t ≲ 0.5, beyond that it is ≈ 0
+    # Retain the time density 2(1−t), giving more samples to lower noise.
     B = U0.shape[0]
     t = EPS + (1.0 - EPS) * (1 - torch.sqrt(1 - torch.rand(B)))
-    s = marginal_prob_std(t, model.sigma)
-    K = torch.ceil(s**2 / DELTA_MAX).clamp_min(1)
-    # Fixed upper bound at t=1 keeps the compiled graph static. Padding still has Δ = 0, Y = 0.
-    max_steps = math.ceil((model.sigma**2 - 1) / (2 * math.log(model.sigma) * DELTA_MAX))
-    Kmax = 1 << (max_steps - 1).bit_length()
-    delta = s**2 / K
-    active = torch.arange(1, Kmax + 1)[None, :] <= K[:, None]
-    # all increments of all substeps are drawn at once (they do not depend on U); the ordered product exp(iY_K)…exp(iY_1)
-    # is formed pairwise in log₂ Kmax rounds, 28% faster per batch than Kmax sequential left multiplications
-    Y = heat_kernel_step((B, Kmax) + U0.shape[1:4], (delta[:, None] * active)[:, :, None, None, None])
-    G = qexp(Y)
-    while G.shape[1] > 1:
-        G = qmul(G[:, 1::2], G[:, ::2])
-    Ut = qmul(G[:, 0], U0)
-    Y_last = Y[torch.arange(B), (K - 1).long()]
+    Sigma = marginal_prob_std(t, model.sigma, model.noise_beta)
+    K = torch.ceil(Sigma**2 / DELTA_MAX).clamp_min(1)
+    delta = Sigma**2 / K
+    Ut, Y_last = brownian(U0, delta, K)
     # the 1/K weight only reweights t, the minimiser per t is unchanged; the all-zero score gives loss 3
-    residual = bc(s) * (model(Ut, t) - heat_kernel_score(Y_last, delta[:, None, None, None]))
+    residual = bc(Sigma) * (model(Ut, t) - heat_kernel_score(Y_last, delta[:, None, None, None]))
     return (residual.pow(2).sum(-1).mean((1, 2, 3)) / K).mean()
 
 
@@ -252,14 +576,17 @@ def load_cfgs(n=None, path=DATA, dtype=torch.float32):
 def main():
     torch.manual_seed(SEED)
     os.makedirs(OUT, exist_ok=True)
+    print(f"Data {DATA}\nOutput {OUT}\nEpochs {EPOCHS}, batch {BATCH}, lr {LR}, "
+          f"EMA decay {EMA_DECAY}, eps {EPS}, seed {SEED}\nSave epochs {SAVE_EPOCHS}", flush=True)
     U_data = load_cfgs()
     N = U_data.shape[0]
-    model = LCNN(CH, NLAYERS, SIGMA)
+    model = LCNN(CH, NLAYERS, SIGMA, noise_beta=BETA)
     params = list(model.parameters())
     ema = ExponentialMovingAverage(params, decay=EMA_DECAY)
     opt = torch.optim.Adam(params, lr=LR, fused=True)
     train_loss = torch.compile(loss_fn, mode="reduce-overhead", fullgraph=True, dynamic=False)
-    print(f"{N} configs, L={L}, β={BETA}, σ={SIGMA} (std(1)={marginal_prob_std(torch.tensor(1.0), SIGMA):.2f}), "
+    print(f"{N} configs, L={L}, β={BETA}, noise_beta={model.noise_beta}, "
+          f"Sigma(1)={marginal_prob_std(torch.tensor(1.0), SIGMA, model.noise_beta):.6f}, "
           f"{sum(p.numel() for p in params)} parameters")
     check_equivariance(model, U_data[:2])
     t0 = time.time()
@@ -281,9 +608,10 @@ def main():
             tot.add_(loss.detach())
             nb += 1
         print(f"epoch {epoch:4d}  loss {(tot / nb).item():.4f}  ({time.time() - t0:.0f}s)", flush=True)
-        if epoch % 10 == 0 or epoch == EPOCHS:
+        if epoch in SAVE_EPOCHS:
             torch.save({"model": model.state_dict(), "ema": ema.state_dict(), "ch": CH, "nlayers": NLAYERS,
-                        "sigma": SIGMA, "L": L, "beta": BETA, "epoch": epoch}, f"{OUT}/ckpt_epoch{epoch:04d}.pt")
+                        "sigma": SIGMA, "noise_beta": model.noise_beta,
+                        "L": L, "beta": BETA, "epoch": epoch}, f"{OUT}/ckpt_epoch{epoch:04d}.pt")
 
 
 if __name__ == "__main__":

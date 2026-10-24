@@ -13,8 +13,8 @@ from sample_su2_em import wilson
 from train_su2_dm import load_cfgs
 
 ROOT = Path(__file__).resolve().parents[2]
-DM_FILE = ROOT / "results/su2_L16_beta2.0_lcnn_hk_c16l3_20261001/samples_epoch0100_steps2000.h5"
-HB_FILE = ROOT / "trainningdata/cfgs_su2_beta=2.0_16^2.h5"
+DM_FILE = ROOT / "results/su2_L32_beta2.0_lcnn_hk_c16l3/samples_epoch0100_steps2000.h5"
+HB_FILE = ROOT / "trainningdata/cfgs_su2_beta=2.0_32^2.h5"
 RT = sorted(((r, t) for r in range(1, 5) for t in range(1, 5)), key=lambda rt: (rt[0] * rt[1], *rt))
 BATCH = 256
 HB_BLOCK = 50  # Consecutive saved configurations per block. Check stability when changing ensembles.
@@ -48,7 +48,7 @@ def main():
     if any(not (0 < r < L and 0 < t < L) for r, t in RT):
         raise ValueError("Loop sides must be positive and smaller than L")
 
-    # Infinite-volume result for simple contractible loops. At beta=2 and L=16,
+    # Infinite-volume result for simple contractible loops. At beta=2 and L=32,
     # finite-volume corrections for these loops are negligible. See arXiv 1403.1770.
     area = np.prod(RT, axis=1)
     exact = (ive(2, beta) / ive(1, beta)) ** area

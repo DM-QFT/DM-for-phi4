@@ -1,0 +1,45 @@
+#!/bin/bash -l
+#PBS -q regular-g
+#PBS -l select=4:mpiprocs=1
+#PBS -l walltime=01:00:00
+#PBS -W group_list=gw97
+#PBS -N su2_L128_reverse_4n
+#PBS -j oe
+#PBS -m n
+
+set -euo pipefail
+cd /work/gw97/w97000/project/DM/2DSUN
+source /usr/share/Modules/init/bash
+
+job_id="${1:-${PBS_JOBID}}"
+rank="${OMPI_COMM_WORLD_RANK:-master}"
+
+if [[ "$rank" == master ]]; then
+    module list
+    # Login shells initialize Miyabi's module variables on every remote node.
+    exec mpirun -np 4 --map-by ppr:1:node --bind-to none \
+        -hostfile "${PBS_NODEFILE}" \
+        bash -l "${PWD}/src/Prolongation/reverse_L128_4node.pbs" "$job_id"
+fi
+
+# One Sigma^2 per node and GH200. Parents, seeds and model are those of the Sigma^2 = 0.2 run.
+sigma2=(0.15 0.1 0.05 0.02)
+s2="${sigma2[$rank]}"
+cache_dir=$(mktemp -d "${TMPDIR:-/tmp}/su2_L128_${job_id}_${rank}_XXXXXX")
+trap 'rm -rf "$cache_dir"' EXIT
+
+export PATH="/work/gw97/w97000/envs/nenv2/bin:$PATH"
+# Triton requires gcc/g++. The batch default nvc rejects -Wno-psabi.
+export CC=/usr/bin/gcc CXX=/usr/bin/g++
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+export TORCHINDUCTOR_COMPILE_THREADS=4 PYTHONDONTWRITEBYTECODE=1
+export TORCHINDUCTOR_CACHE_DIR="$cache_dir/torch"
+export TRITON_CACHE_DIR="$cache_dir/triton"
+
+log="results/su2_prolongation_reverse/reverse_L64_to_L128_beta200_Sigma2_${s2/./p}_n512_betanoise_${job_id%%.*}.log"
+set -o noclobber
+{
+    printf 'Rank %s on %s. Sigma2 %s\n' "$rank" "$(hostname)" "$s2"
+    module list
+    python3 -u src/Prolongation/reverse_su2_L128.py "$s2"
+} > "$log" 2>&1
